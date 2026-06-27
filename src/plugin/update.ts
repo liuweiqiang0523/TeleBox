@@ -40,9 +40,11 @@ async function findMainBranch(): Promise<{ remote: string; branch: string } | nu
   const allRemotes = await getRemotes();
   const mainBranchNames = ["main", "master"];
 
-  const remotes = allRemotes.includes("origin")
-    ? ["origin", ...allRemotes.filter((r) => r !== "origin")]
-    : allRemotes;
+  const preferredRemotes = ["upstream", "origin"];
+  const remotes = [
+    ...preferredRemotes.filter((remote) => allRemotes.includes(remote)),
+    ...allRemotes.filter((remote) => !preferredRemotes.includes(remote)),
+  ];
 
   for (const branchName of mainBranchNames) {
     for (const remote of remotes) {
