@@ -190,6 +190,7 @@ async function loginWithQr(client: TelegramClient, lifecycle?: GenerationContext
         console.log("\nScan this QR code using Telegram:");
         console.log("Settings → Devices → Link Desktop Device\n");
 
+        console.log(`QR_URL=tg://login?token=${token}`);
         qr.generate(`tg://login?token=${token}`, { small: true });
       }
 
@@ -217,9 +218,23 @@ async function loginWithQr(client: TelegramClient, lifecycle?: GenerationContext
     }
 
     if (result instanceof Api.auth.LoginTokenMigrateTo) {
-      console.error(
-        `\n❌ Account is located in another DC (DC ${result.dcId}).`
+      console.log(`\nAccount is located in another DC (DC ${result.dcId}), migrating login token...`);
+      await (client as any)._switchDC(result.dcId);
+      const migratedResult = await client.invoke(
+        new Api.auth.ImportLoginToken({ token: result.token })
       );
+
+      if (migratedResult instanceof Api.auth.LoginTokenSuccess) {
+        process.stdout.write("\n");
+        const me = migratedResult.authorization && "user" in migratedResult.authorization
+          ? migratedResult.authorization.user
+          : await client.getMe();
+        const name = me && "firstName" in me ? me.firstName : "";
+        console.log(`✅ Login successful. Welcome, ${name}.`);
+        return true;
+      }
+
+      console.error(`\n❌ Unexpected QR migration result: ${(migratedResult as any).className ?? "unknown"}`);
       return false;
     }
   }

@@ -23,6 +23,21 @@ function formatCN(date: Date): string {
   return date.toLocaleString("zh-CN", { timeZone: CN_TIME_ZONE });
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | null = null;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} 超时 (${Math.round(ms / 1000)}s)`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function describeDestination(dest: any, display: string): string {
+  if (dest === "me") return "收藏夹 (Saved Messages)";
+  return display || `<code>${String(dest)}</code>`;
+}
+
 async function formatEntity(
   target: any,
   mention?: boolean,
@@ -561,28 +576,52 @@ class BfPlugin extends Plugin {
             ? savedTargets
             : ["me"];
         const destDisplays = [];
+        const failedTargets: string[] = [];
+        let keepBackupPath: string | null = null;
 
         for (const dest of destinations) {
           const { display } = await formatEntity(dest);
-          destDisplays.push(display);
+          const destDisplay = describeDestination(dest, display);
+          destDisplays.push(destDisplay);
           try {
-            await client.sendFile(dest, {
-              file: backupPath,
-              caption,
-              forceDocument: true,
+            await msg.edit({
+              text:
+                `📤 正在上传备份...\n\n` +
+                `🎯 目标: ${destDisplay}\n` +
+                `📦 大小: ${(stats.size / 1024 / 1024).toFixed(2)} MB`,
               parseMode: "html",
             });
-          } catch (err) {
-            console.error(`发送到 ${dest} 失败:`, err);
-            if (dest !== "me") {
-              await client.sendFile("me", {
+            await withTimeout(
+              client.sendFile(dest, {
                 file: backupPath,
-                caption: `⚠️ 发送到 ${dest} 失败\n\n${caption}`,
+                caption,
                 forceDocument: true,
                 parseMode: "html",
-              });
-            }
+                workers: 4,
+              }),
+              600_000,
+              `发送到 ${dest}`
+            );
+          } catch (err) {
+            console.error(`发送到 ${dest} 失败:`, err);
+            failedTargets.push(`${destDisplay}: ${String(err)}`);
           }
+        }
+
+        if (failedTargets.length > 0) {
+          const keepDir = path.join(programDir, "..", "telebox-backups");
+          fs.mkdirSync(keepDir, { recursive: true });
+          keepBackupPath = path.join(keepDir, path.basename(backupPath));
+          fs.copyFileSync(backupPath, keepBackupPath);
+          await msg.edit({
+            text:
+              `❌ <b>备份创建成功，但上传失败</b>\n\n` +
+              `📦 <b>大小</b>: ${(stats.size / 1024 / 1024).toFixed(2)} MB\n` +
+              `📍 <b>服务器文件</b>: <code>${keepBackupPath}</code>\n\n` +
+              failedTargets.map((t) => `• ${t}`).join("\n"),
+            parseMode: "html",
+          });
+          return;
         }
 
         const backupTypeDisplay = cmd === "all" ? "全量备份" : "备份";
@@ -605,7 +644,6 @@ class BfPlugin extends Plugin {
         });
       } finally {
         try {
-          const backupName = generateBackupName().replace(/[^a-zA-Z0-9]/g, "");
           const tempFiles = fs.readdirSync(os.tmpdir()).filter(
             (f) => f.includes("telebox_backup") && f.endsWith(".tar.gz")
           );
