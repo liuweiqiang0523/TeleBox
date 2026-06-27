@@ -79,6 +79,14 @@ async function update(force = false, msg: Api.Message) {
     await msg.edit({ text: "🔄 正在拉取最新代码..." });
 
     if (force) {
+      const { stdout: aheadStd } = await execAsync(`git rev-list --count ${fullBranch}..HEAD`);
+      const aheadCount = Number(aheadStd.trim() || "0");
+      if (aheadCount > 0) {
+        throw new Error(
+          `当前分支有 ${aheadCount} 个本地维护提交，已阻止强制更新，避免丢失服务器定制改动。请手动合并或联系维护。`
+        );
+      }
+
       console.log(`⚠️ 强制回滚到 ${fullBranch}...`);
       await execAsync(`git reset --hard ${fullBranch}`);
       await msg.edit({ text: "🔄 强制更新中..." });
