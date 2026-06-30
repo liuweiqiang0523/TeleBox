@@ -28,6 +28,8 @@ const prefixes = getPrefixes();
 const mainPrefix = prefixes[0];
 // 时区设置
 const CN_TIME_ZONE = "Asia/Shanghai";
+const BACKUP_UPLOAD_TIMEOUT_MS = 120_000;
+const BACKUP_UPLOAD_WORKERS = 1;
 
 function formatCN(date: Date): string {
   return date.toLocaleString("zh-CN", { timeZone: CN_TIME_ZONE });
@@ -605,7 +607,8 @@ class BfPlugin extends Plugin {
               text:
                 `📤 正在上传备份...\n\n` +
                 `🎯 目标: ${destDisplay}\n` +
-                `📦 大小: ${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+                `📦 大小: ${(stats.size / 1024 / 1024).toFixed(2)} MB\n` +
+                `⏱️ 超过 ${Math.round(BACKUP_UPLOAD_TIMEOUT_MS / 1000)} 秒会自动保留到服务器`,
               parseMode: "html",
             });
             await withTimeout(
@@ -614,9 +617,9 @@ class BfPlugin extends Plugin {
                 caption,
                 forceDocument: true,
                 parseMode: "html",
-                workers: 4,
+                workers: BACKUP_UPLOAD_WORKERS,
               }),
-              600_000,
+              BACKUP_UPLOAD_TIMEOUT_MS,
               `发送到 ${dest}`
             );
           } catch (err) {
