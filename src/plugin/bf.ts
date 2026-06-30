@@ -14,6 +14,7 @@ import { getPrefixes } from "@utils/pluginManager";
 import type { GenerationContext } from "@utils/generationContext";
 import { tryGetCurrentGenerationContext } from "@utils/runtimeManager";
 import { CustomFile } from "teleproto/client/uploads";
+import bigInt, { BigInteger } from "big-integer";
 
 // HTML escape utility to prevent XSS when embedding user-supplied values into HTML messages
 function htmlEscape(value: unknown): string {
@@ -31,6 +32,10 @@ const mainPrefix = prefixes[0];
 const CN_TIME_ZONE = "Asia/Shanghai";
 const BACKUP_UPLOAD_TIMEOUT_MS = 900_000;
 const BACKUP_UPLOAD_STALL_MS = 120_000;
+const BACKUP_PART_TIMEOUT_MS = 30_000;
+const BACKUP_PART_RETRY_LIMIT = 4;
+const SMALL_FILE_LIMIT_BYTES = 10 * 1024 * 1024;
+const SMALL_UPLOAD_PART_SIZE = 512 * 1024;
 const BACKUP_UPLOAD_WORKERS = 1;
 const STANDARD_BACKUP_EXCLUDES = new Set([
   path.join("assets", "ytdlp", "yt-dlp"),
@@ -81,6 +86,93 @@ async function safeEditMessage(
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function createUploadFileId(): BigInteger {
+  // Keep the generated long safely positive for MTProto serialization.
+  return bigInt(crypto.randomBytes(7).toString("hex"), 16);
+}
+
+async function reconnectClient(client: any): Promise<void> {
+  try {
+    if (typeof client.disconnect === "function") {
+      await client.disconnect();
+    }
+  } catch {}
+  await sleep(1500);
+  try {
+    if (typeof client.connect === "function") {
+      await client.connect();
+    }
+  } catch {}
+}
+
+async function uploadSmallFileWithRetries(
+  client: any,
+  backupPath: string,
+  sizeBytes: number,
+  onProgress: (progress: number) => void
+): Promise<Api.InputFile> {
+  const name = path.basename(backupPath);
+  const fileId = createUploadFileId();
+  const partCount = Math.ceil(sizeBytes / SMALL_UPLOAD_PART_SIZE);
+  const handle = await fs.promises.open(backupPath, "r");
+
+  try {
+    for (let part = 0; part < partCount; part += 1) {
+      const start = part * SMALL_UPLOAD_PART_SIZE;
+      const length = Math.min(SMALL_UPLOAD_PART_SIZE, sizeBytes - start);
+      const bytes = Buffer.alloc(length);
+      await handle.read(bytes, 0, length, start);
+
+      let sent = false;
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= BACKUP_PART_RETRY_LIMIT; attempt += 1) {
+        try {
+          await withTimeout(
+            client.invoke(
+              new Api.upload.SaveFilePart({
+                fileId,
+                filePart: part,
+                bytes,
+              })
+            ),
+            BACKUP_PART_TIMEOUT_MS,
+            `上传分片 ${part + 1}/${partCount}`
+          );
+          sent = true;
+          break;
+        } catch (error) {
+          lastError = error;
+          console.warn(
+            `[bf] upload part ${part + 1}/${partCount} attempt ${attempt} failed: ${String(error)}`
+          );
+          if (attempt < BACKUP_PART_RETRY_LIMIT) {
+            await reconnectClient(client);
+          }
+        }
+      }
+
+      if (!sent) {
+        throw new Error(`上传分片 ${part + 1}/${partCount} 失败: ${String(lastError)}`);
+      }
+
+      onProgress((part + 1) / partCount);
+    }
+  } finally {
+    await handle.close().catch(() => {});
+  }
+
+  return new Api.InputFile({
+    id: fileId,
+    parts: partCount,
+    name,
+    md5Checksum: "",
+  });
+}
+
 async function uploadBackupFile(
   client: any,
   msg: Api.Message,
@@ -128,16 +220,18 @@ async function uploadBackupFile(
 
   try {
     await editProgress(0, "准备上传");
-    const fileHandle = await withTimeout(
-      client.uploadFile({
-        file,
-        workers: BACKUP_UPLOAD_WORKERS,
-        onProgress: progressCallback,
-        maxBufferSize: 8 * 1024 * 1024,
-      }),
-      BACKUP_UPLOAD_TIMEOUT_MS,
-      `上传到 ${dest}`
-    );
+    const fileHandle = sizeBytes < SMALL_FILE_LIMIT_BYTES
+      ? await uploadSmallFileWithRetries(client, backupPath, sizeBytes, progressCallback)
+      : await withTimeout(
+          client.uploadFile({
+            file,
+            workers: BACKUP_UPLOAD_WORKERS,
+            onProgress: progressCallback,
+            maxBufferSize: 8 * 1024 * 1024,
+          }),
+          BACKUP_UPLOAD_TIMEOUT_MS,
+          `上传到 ${dest}`
+        );
 
     if ((progressCallback as any).isCanceled) {
       throw new Error(`上传到 ${dest} 长时间无进度 (${Math.round(BACKUP_UPLOAD_STALL_MS / 1000)}s)`);
