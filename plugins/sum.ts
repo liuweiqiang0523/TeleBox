@@ -24,6 +24,29 @@ const MAX_PERSON_CONTEXT_LINES = 220;
 const SUMMARY_MESSAGE_CHAR_BUDGET = 24000;
 const PERSON_CONTEXT_RADIUS = 2;
 const URL_PATTERN = /https?:\/\/[^\s<>"'，。！？；、）)】\]]+/gi;
+const MEME_STOP_WORDS = new Set([
+  "这个",
+  "那个",
+  "不是",
+  "没有",
+  "可以",
+  "已经",
+  "还是",
+  "就是",
+  "然后",
+  "现在",
+  "什么",
+  "怎么",
+  "感觉",
+  "一下",
+  "一个",
+  "我们",
+  "你们",
+  "他们",
+  "是不是",
+  "为什么",
+  "哈哈哈",
+]);
 
 const configPath = path.join(
   createDirectoryInAssets("sum"),
@@ -70,6 +93,20 @@ const modePrompts: Record<Exclude<SumMode, "summary" | "person">, string> = {
     "你是 Telegram 群聊气氛观察助手。分析互动气氛、关系、玩笑、认真讨论和情绪变化。必须温和，不要做攻击性人格判断。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只描述互动现象，不给人贴负面人格标签。\n4. 名场面可轻松，但不要冒犯。\n\n【输出模板】\n# 🎭 群聊气氛小剧场｜群名\n\n## 🌡️ 整体气氛\n一句话描述氛围。\n\n## 👥 互动关系\n- 🤝 用户A ↔ 用户B：互动特点一句话\n- 🧭 用户C：在群里的状态一句话\n\n## 🎬 名场面\n- 🗣️ 用户：「原话或近似原话」｜为什么有代表性\n- 🗣️ 用户：「原话或近似原话」｜为什么有代表性\n\n## 🧭 小结\n一句话总结这段时间的群感。",
   about:
     "你是 Telegram 群聊关键词追踪助手。只总结和指定关键词直接相关的消息，并说明上下文。不要泛化到无关话题。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. ⭐ 标记的消息是关键词直接命中，必须优先参考。\n4. 没有直接命中就明确说明。\n\n【输出模板】\n# 🔎 关键词追踪｜关键词\n\n## 📌 相关结论\n- ✅ 结论：一句话\n- ✅ 结论：一句话\n\n## 🧵 讨论脉络\n- 🕒 时间/用户：说了什么\n- 🕒 时间/用户：别人怎么回应\n\n## ❓ 未解决点\n- ❔ 问题：一句话\n\n## 🧭 一句话总结\n一句话说明这个关键词在群里被怎么讨论。",
+  meme:
+    "你是 Telegram 群聊热梗观察助手。只提取输入中真实出现或被多次呼应的热词、梗、口头禅和名场面，不要硬造网络梗。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 必须优先参考“本地热词候选”和聊天原文。\n4. 没有明显热梗就写“无明显热梗”，不要尬编。\n\n【输出模板】\n# 🧨 群聊热梗榜｜群名\n\n## 🔥 热词 TOP\n🥇 热词/梗：出现方式一句话｜代表用户\n🥈 热词/梗：出现方式一句话｜代表用户\n🥉 热词/梗：出现方式一句话｜代表用户\n\n## 🎬 名场面\n- 🗣️ 用户：「原话或近似原话」｜为什么好笑/有代表性\n- 🗣️ 用户：「原话或近似原话」｜为什么好笑/有代表性\n\n## 🧭 梗味总结\n一句话概括这段时间的群聊笑点。",
+  relation:
+    "你是 Telegram 群聊人物关系网助手。根据连续对话、互相点名、回复语境和本地互动候选，分析群友之间的互动关系。不要做现实人际推断，只描述群聊互动。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只写聊天里能看出来的互动，不要脑补私下关系。\n4. 关系描述要轻松但不冒犯。\n\n【输出模板】\n# 🕸️ 人物关系网｜群名\n\n## 👥 核心互动\n- 🤝 用户A ↔ 用户B：互动特点一句话｜依据一句话\n- 🤝 用户A ↔ 用户C：互动特点一句话｜依据一句话\n\n## 🧲 话题枢纽\n- 🧭 用户：经常把哪些话题串起来\n- 🧭 用户：经常被谁回应/追问\n\n## 🎭 群聊站位\n一句话概括这段时间的互动结构。",
+  story:
+    "你是 Telegram 群聊剧情线整理助手。把一段时间的群聊整理成清晰时间线，像补番一样讲发生了什么。不要逐条流水账。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 时间线必须按时间顺序。\n4. 只写输入里出现的内容，不能写后续未发生的进展。\n\n【输出模板】\n# 🧵 今日剧情线｜群名\n\n## ⏰ 时间线\n- 🕒 时间段：发生了什么｜主要用户\n- 🕒 时间段：发生了什么｜主要用户\n- 🕒 时间段：发生了什么｜主要用户\n\n## 🎬 转折点\n- 🔁 从什么话题转到什么话题｜谁推动\n- 🔁 从什么话题转到什么话题｜谁推动\n\n## 🧭 一句话剧情\n一句话讲完整段群聊主线。",
+  compare:
+    "你是 Telegram 群聊对比助手。对比“当前时段”和“对照时段”的聊天活跃度、核心用户、话题变化和气氛变化。必须优先使用输入里的本地统计。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 数字以本地统计为准，不能把采样条数当总量。\n4. 如果某一侧消息少，要明确说明样本不足。\n\n【输出模板】\n# 📈 昨日今日对比｜群名\n\n## 📊 数据变化\n- 💬 消息量：当前 N 条｜对照 N 条｜变化一句话\n- 👥 核心用户：当前是谁｜对照是谁\n- ⏰ 活跃时段：当前｜对照\n\n## 🔁 话题变化\n- 🧵 当前更热：一句话\n- 🧵 对照更热：一句话\n- 🧭 延续话题：一句话\n\n## 🎭 气氛变化\n一句话说明今天相比昨天/上一段有什么变化。\n\n## 🧭 一句话结论\n一句话概括最明显变化。",
+  track:
+    "你是 Telegram 群聊争议追踪助手。追踪这段时间反复出现、尚未完全解决、或者从上一轮延续下来的议题。不要把一次性闲聊写成追踪议题。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只使用输入里出现的证据，不能说“昨天也聊过”除非输入里有对照区或明确提到。\n4. 没有延续争议就写“暂无明显延续争议”。\n\n【输出模板】\n# 🛰️ 争议追踪｜群名\n\n## 🔁 延续议题\n- 🧩 议题：这次怎么被提起｜目前卡在哪里\n- 🧩 议题：这次怎么被提起｜目前卡在哪里\n\n## 📍 当前状态\n- 🧭 已有结论：一句话\n- ❓ 未确认：一句话\n\n## 🔔 下次提醒\n- 👀 如果后续出现什么信息，值得继续跟进",
+  quotes:
+    "你是 Telegram 群聊金句收藏助手。只挑选输入里真实出现的有代表性的短句、名场面和好笑发言。不要编造原话，不要为了凑数改写成金句。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 引号里的内容必须来自聊天原文或非常接近原文。\n4. 没有合适金句就写“无明显金句”。\n\n【输出模板】\n# 💬 金句收藏夹｜群名\n\n## 🏆 今日金句\n🥇 用户：「原话」｜为什么值得收\n🥈 用户：「原话」｜为什么值得收\n🥉 用户：「原话」｜为什么值得收\n\n## 🎬 名场面补充\n- 🗣️ 用户：「原话」｜背景一句话\n- 🗣️ 用户：「原话」｜背景一句话\n\n## 🧭 今日嘴替\n一句话概括这段时间最像群聊精神的一句话。",
+  melon:
+    "你是 Telegram 群聊吃瓜助手。轻松整理争议、反转、围观、调侃和有戏剧性的互动，但必须温和，不拱火，不做人身攻击。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只描述事情和观点，不给人贴恶意标签。\n4. 没有瓜就写“今天瓜不多，主要是正常聊天”。\n\n【输出模板】\n# 🍉 吃瓜速报｜群名\n\n## 👀 今日瓜点\n- 🍉 事件：谁说了什么｜为什么有人围观\n- 🍉 事件：谁说了什么｜为什么有人围观\n\n## 🔄 反转 / 分歧\n- 🔁 分歧：双方观点一句话\n- 🔁 反转：前后变化一句话\n\n## 🧯 别上头\n一句话给出降温版理解。\n\n## 🧭 一句话吃瓜\n一句话总结最值得看的地方。",
 };
 
 const defaultConfig: SumConfig = {
@@ -127,7 +164,14 @@ type SumMode =
   | "todo"
   | "catchup"
   | "vibe"
-  | "about";
+  | "about"
+  | "meme"
+  | "relation"
+  | "story"
+  | "compare"
+  | "track"
+  | "quotes"
+  | "melon";
 
 type SpecialRequest = {
   mode: SumMode;
@@ -298,6 +342,32 @@ function parseSpecialRequest(sub: string | undefined, args: string[]): SpecialRe
     补课: { mode: "catchup", title: "错过消息补课", defaultRangeToken: "8h" },
     vibe: { mode: "vibe", title: "群聊气氛小剧场", defaultRangeToken: "12h" },
     氛围: { mode: "vibe", title: "群聊气氛小剧场", defaultRangeToken: "12h" },
+    meme: { mode: "meme", title: "群聊热梗榜", defaultRangeToken: "24h" },
+    memes: { mode: "meme", title: "群聊热梗榜", defaultRangeToken: "24h" },
+    hotwords: { mode: "meme", title: "群聊热梗榜", defaultRangeToken: "24h" },
+    热梗: { mode: "meme", title: "群聊热梗榜", defaultRangeToken: "24h" },
+    梗: { mode: "meme", title: "群聊热梗榜", defaultRangeToken: "24h" },
+    map: { mode: "relation", title: "人物关系网", defaultRangeToken: "24h" },
+    relation: { mode: "relation", title: "人物关系网", defaultRangeToken: "24h" },
+    relations: { mode: "relation", title: "人物关系网", defaultRangeToken: "24h" },
+    network: { mode: "relation", title: "人物关系网", defaultRangeToken: "24h" },
+    关系: { mode: "relation", title: "人物关系网", defaultRangeToken: "24h" },
+    story: { mode: "story", title: "今日剧情线", defaultRangeToken: "day" },
+    timeline: { mode: "story", title: "今日剧情线", defaultRangeToken: "day" },
+    剧情: { mode: "story", title: "今日剧情线", defaultRangeToken: "day" },
+    时间线: { mode: "story", title: "今日剧情线", defaultRangeToken: "day" },
+    compare: { mode: "compare", title: "昨日今日对比", defaultRangeToken: "day" },
+    vs: { mode: "compare", title: "昨日今日对比", defaultRangeToken: "day" },
+    对比: { mode: "compare", title: "昨日今日对比", defaultRangeToken: "day" },
+    track: { mode: "track", title: "争议追踪", defaultRangeToken: "24h" },
+    follow: { mode: "track", title: "争议追踪", defaultRangeToken: "24h" },
+    追踪: { mode: "track", title: "争议追踪", defaultRangeToken: "24h" },
+    quotes: { mode: "quotes", title: "金句收藏夹", defaultRangeToken: "24h" },
+    quote: { mode: "quotes", title: "金句收藏夹", defaultRangeToken: "24h" },
+    金句: { mode: "quotes", title: "金句收藏夹", defaultRangeToken: "24h" },
+    melon: { mode: "melon", title: "吃瓜速报", defaultRangeToken: "24h" },
+    gua: { mode: "melon", title: "吃瓜速报", defaultRangeToken: "24h" },
+    吃瓜: { mode: "melon", title: "吃瓜速报", defaultRangeToken: "24h" },
   };
 
   if (mode === "about" || mode === "topic" || mode === "关键词") {
@@ -723,6 +793,13 @@ function isSumSelfNoiseRecord(record: ChatMessageRecord): boolean {
     "🧃 错过消息补课",
     "🎭 群聊气氛小剧场",
     "🔎 关键词追踪",
+    "🧨 群聊热梗榜",
+    "🕸️ 人物关系网",
+    "🧵 今日剧情线",
+    "📈 昨日今日对比",
+    "🛰️ 争议追踪",
+    "💬 金句收藏夹",
+    "🍉 吃瓜速报",
   ];
   const normalized = content.replace(/^#+\s*/, "");
   if (summaryHeadings.some((heading) => normalized.startsWith(heading))) {
@@ -1166,7 +1243,220 @@ function buildLocalSummaryStats(records: ChatMessageRecord[], prepared: Prepared
     `活跃时段 TOP：${activeHours.length ? activeHours.join("；") : "无"}`,
     `核心用户 TOP：${topUsers.map((user) => `${user.sender} ${user.count} 条`).join("；") || "无"}`,
     `链接数：${linkCount}；疑问句/问题数：${questionCount}`,
+    ...buildUserTitleHints(sorted),
   ];
+}
+
+function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] {
+  const stats = new Map<string, { sender: string; count: number; questions: number; links: number; media: number; chars: number }>();
+  for (const record of records) {
+    const key = getUserKey(record);
+    const item = stats.get(key) || { sender: record.sender, count: 0, questions: 0, links: 0, media: 0, chars: 0 };
+    item.count += 1;
+    item.questions += isQuestion(record.content) ? 1 : 0;
+    item.links += extractUrls(record.content).length;
+    item.media += record.content.includes("[媒体消息]") ? 1 : 0;
+    item.chars += record.content.length;
+    stats.set(key, item);
+  }
+
+  const hints = [...stats.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+    .map((item) => {
+      const traits = [
+        item.questions >= Math.max(2, item.count * 0.25) ? "提问多" : "",
+        item.links > 0 ? `资源 ${item.links}` : "",
+        item.media > 0 ? `媒体 ${item.media}` : "",
+        item.chars / Math.max(1, item.count) > 60 ? "长消息" : "短句互动",
+      ].filter(Boolean);
+      return `${item.sender}：${traits.join(" / ") || "普通互动"}；称号应围绕真实话题生成，尽量稳定、不冒犯`;
+    });
+
+  return hints.length ? ["称号库提示：", ...hints] : [];
+}
+
+function buildMemeStats(records: ChatMessageRecord[]): string[] {
+  const phraseCounts = new Map<string, { count: number; users: Set<string> }>();
+  const shortLineCounts = new Map<string, { count: number; users: Set<string> }>();
+
+  for (const record of records) {
+    const content = record.content
+      .replace(URL_PATTERN, " ")
+      .replace(/\[[^\]]+\]/g, " ")
+      .trim();
+    if (!content) continue;
+
+    if (content.length >= 2 && content.length <= 16 && !isQuestion(content)) {
+      const item = shortLineCounts.get(content) || { count: 0, users: new Set<string>() };
+      item.count += 1;
+      item.users.add(record.sender);
+      shortLineCounts.set(content, item);
+    }
+
+    const tokens = content.match(/[A-Za-z0-9._-]{2,}|[\u4e00-\u9fa5]{2,8}/g) || [];
+    for (const token of tokens) {
+      const normalized = token.toLowerCase();
+      if (normalized.length < 2 || MEME_STOP_WORDS.has(normalized)) continue;
+      const item = phraseCounts.get(token) || { count: 0, users: new Set<string>() };
+      item.count += 1;
+      item.users.add(record.sender);
+      phraseCounts.set(token, item);
+    }
+  }
+
+  const formatTop = (map: Map<string, { count: number; users: Set<string> }>, minCount: number) =>
+    [...map.entries()]
+      .filter(([, item]) => item.count >= minCount)
+      .sort((a, b) => b[1].count - a[1].count || b[1].users.size - a[1].users.size)
+      .slice(0, 12)
+      .map(([text, item]) => `${text}：${item.count} 次｜用户：${[...item.users].slice(0, 4).join("、")}`);
+
+  const repeatedLines = formatTop(shortLineCounts, 2);
+  const hotWords = formatTop(phraseCounts, 3);
+  return [
+    "本地热词候选：",
+    ...(hotWords.length ? hotWords : ["无明显高频热词"]),
+    "重复短句候选：",
+    ...(repeatedLines.length ? repeatedLines : ["无明显重复短句"]),
+  ];
+}
+
+function buildRelationStats(records: ChatMessageRecord[]): string[] {
+  const pairStats = new Map<string, { a: string; b: string; count: number }>();
+  const mentions = new Map<string, { from: string; to: string; count: number }>();
+  const usernameToSender = new Map<string, string>();
+
+  for (const record of records) {
+    if (record.username) usernameToSender.set(record.username.toLowerCase(), record.sender);
+  }
+
+  for (let index = 1; index < records.length; index += 1) {
+    const prev = records[index - 1];
+    const curr = records[index];
+    if (getUserKey(prev) === getUserKey(curr)) continue;
+    if (curr.timestamp - prev.timestamp > 10 * 60) continue;
+    const names = [prev.sender, curr.sender].sort();
+    const key = names.join(" ↔ ");
+    const item = pairStats.get(key) || { a: names[0], b: names[1], count: 0 };
+    item.count += 1;
+    pairStats.set(key, item);
+  }
+
+  for (const record of records) {
+    for (const match of record.content.matchAll(/@([A-Za-z0-9_]{3,})/g)) {
+      const to = usernameToSender.get(match[1].toLowerCase()) || `@${match[1]}`;
+      const key = `${record.sender}->${to}`;
+      const item = mentions.get(key) || { from: record.sender, to, count: 0 };
+      item.count += 1;
+      mentions.set(key, item);
+    }
+  }
+
+  const topPairs = [...pairStats.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10)
+    .map((item) => `${item.a} ↔ ${item.b}：连续互动约 ${item.count} 次`);
+  const topMentions = [...mentions.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8)
+    .map((item) => `${item.from} → ${item.to}：点名 ${item.count} 次`);
+
+  return [
+    "本地互动候选：",
+    ...(topPairs.length ? topPairs : ["无明显连续互动候选"]),
+    "本地点名候选：",
+    ...(topMentions.length ? topMentions : ["无明显 @ 点名"]),
+  ];
+}
+
+function buildQuoteCandidateLines(records: ChatMessageRecord[]): string[] {
+  const candidates = records.filter((record) => {
+    const text = record.content.trim();
+    if (text.length < 4 || text.length > 90) return false;
+    if (extractUrls(text).length) return false;
+    if (text === "[媒体消息]") return false;
+    return /[！!？?]|哈哈|笑死|离谱|牛|草|冲|富哥|绷|乐|绝了|麻了|炸了|跑路|上车/.test(text);
+  });
+
+  const picked = candidates.length > 120 ? pickEvenValues(candidates, 120) : candidates;
+  return [
+    "金句候选：",
+    ...(picked.length
+      ? picked.map((record) => recordToLine(record, { includeIdentity: true, maxContentChars: 120 }))
+      : ["无明显金句候选，允许从代表性消息中谨慎挑选短句"]),
+  ];
+}
+
+function prepareMemeInput(records: ChatMessageRecord[]): PreparedInput {
+  const sampled = prepareSummaryInput(records);
+  return {
+    lines: [
+      ...buildMemeStats(records),
+      "",
+      ...buildQuoteCandidateLines(records).slice(0, 80),
+      "",
+      "代表性消息：",
+      ...sampled.lines.slice(0, 140),
+    ],
+    note: `已统计 ${records.length} 条消息的热词/重复短句，并提供代表性消息`,
+  };
+}
+
+function prepareRelationInput(records: ChatMessageRecord[]): PreparedInput {
+  const sampled = prepareSummaryInput(records);
+  return {
+    lines: [
+      ...buildRelationStats(records),
+      "",
+      ...buildRankStats(records),
+      "",
+      "代表性消息：",
+      ...sampled.lines.slice(0, 150),
+    ],
+    note: `已统计 ${records.length} 条消息的连续互动和 @ 点名候选`,
+  };
+}
+
+function prepareQuotesInput(records: ChatMessageRecord[]): PreparedInput {
+  const quoteLines = buildQuoteCandidateLines(records);
+  const sampled = prepareSummaryInput(records);
+  return {
+    lines: [
+      ...quoteLines,
+      "",
+      "代表性消息：",
+      ...sampled.lines.slice(0, 100),
+    ],
+    note: `已筛选 ${records.length} 条消息中的金句候选，并附带代表性上下文`,
+  };
+}
+
+function prepareCompareInput(
+  currentRecords: ChatMessageRecord[],
+  previousRecords: ChatMessageRecord[],
+  currentLabel: string,
+  previousLabel: string,
+): PreparedInput {
+  const currentPrepared = prepareSummaryInput(currentRecords);
+  const previousPrepared = prepareSummaryInput(previousRecords);
+  return {
+    lines: [
+      "对比本地统计：",
+      `当前时段：${currentLabel}；全量 ${currentRecords.length} 条；采样 ${currentPrepared.lines.length} 条`,
+      ...buildLocalSummaryStats(currentRecords, currentPrepared).slice(2),
+      "",
+      `对照时段：${previousLabel}；全量 ${previousRecords.length} 条；采样 ${previousPrepared.lines.length} 条`,
+      ...buildLocalSummaryStats(previousRecords, previousPrepared).slice(2),
+      "",
+      "当前时段聊天消息：",
+      ...currentPrepared.lines.slice(0, 110),
+      "",
+      "对照时段聊天消息：",
+      ...previousPrepared.lines.slice(0, 110),
+    ],
+    note: `已对比当前 ${currentRecords.length} 条和对照 ${previousRecords.length} 条消息；两边都已按时间采样`,
+  };
 }
 
 function prepareRankInput(records: ChatMessageRecord[]): PreparedInput {
@@ -1174,6 +1464,7 @@ function prepareRankInput(records: ChatMessageRecord[]): PreparedInput {
   return {
     lines: [
       ...buildRankStats(records),
+      ...buildUserTitleHints(records),
       "",
       "代表性消息：",
       ...sampled.lines.slice(0, 140),
@@ -1241,6 +1532,9 @@ function prepareSpecialInput(mode: SumMode, records: ChatMessageRecord[], keywor
   if (mode === "rank") return prepareRankInput(records);
   if (mode === "links") return prepareLinksInput(records);
   if (mode === "about") return prepareKeywordInput(records, keyword || "");
+  if (mode === "meme") return prepareMemeInput(records);
+  if (mode === "relation") return prepareRelationInput(records);
+  if (mode === "quotes") return prepareQuotesInput(records);
   return prepareSummaryInput(records);
 }
 
@@ -1480,27 +1774,34 @@ async function handleCommand(msg: Api.Message): Promise<void> {
 
     await msg.edit({ text: "⏳ 正在读取消息并生成摘要..." });
 
-    const fetchResult = range.startTime && range.endTime
-      ? await getChatMessageRecordsByTimeRange(chatId, range.startTime, range.endTime)
-      : await getChatMessageRecords(chatId, range.count || 100);
-    if (fetchResult.records.length === 0) {
+    const mode: SumMode = special?.mode || (request.target ? "person" : "summary");
+    const isCompareMode = mode === "compare";
+    const effectiveRange = isCompareMode && (!range.startTime || !range.endTime)
+      ? resolveRangeToken("day")
+      : range;
+    const fetchResult = effectiveRange.startTime && effectiveRange.endTime
+      ? await getChatMessageRecordsByTimeRange(chatId, effectiveRange.startTime, effectiveRange.endTime)
+      : await getChatMessageRecords(chatId, effectiveRange.count || 100);
+    let comparePreviousResult: MessageFetchResult | null = null;
+    let previousScope = "";
+
+    if (isCompareMode && effectiveRange.startTime && effectiveRange.endTime) {
+      const spanSeconds = Math.max(60, effectiveRange.endTime - effectiveRange.startTime + 1);
+      const previousEnd = effectiveRange.startTime - 1;
+      const previousStart = previousEnd - spanSeconds + 1;
+      comparePreviousResult = await getChatMessageRecordsByTimeRange(chatId, previousStart, previousEnd);
+      previousScope = `${formatDate(new Date(previousStart * 1000))} 至 ${formatDate(new Date(previousEnd * 1000))}`;
+    }
+
+    if (fetchResult.records.length === 0 && (!comparePreviousResult || comparePreviousResult.records.length === 0)) {
       await msg.edit({ text: "没有找到可总结的文本消息" });
       return;
     }
 
     const chatName = getChatDisplayName(msg, chatId);
-    const mode: SumMode = special?.mode || (request.target ? "person" : "summary");
-    const density = getSummaryDensity(range.durationMinutes, fetchResult.records.length);
+    const density = getSummaryDensity(effectiveRange.durationMinutes, fetchResult.records.length);
     const isPersonAnalysis = mode === "person";
-    const prepared = isPersonAnalysis
-      ? preparePersonInput(fetchResult.records, request.target)
-      : special
-      ? prepareSpecialInput(mode, fetchResult.records, special.keyword)
-      : prepareSummaryInput(fetchResult.records);
-    const localSummaryStats = !isPersonAnalysis && !["rank", "links", "about"].includes(mode)
-      ? buildLocalSummaryStats(fetchResult.records, prepared)
-      : [];
-    const fetchNote = range.startTime && range.endTime
+    const fetchNote = effectiveRange.startTime && effectiveRange.endTime
       ? [
           `已读取 ${fetchResult.fetchedPages} 页 / ${fetchResult.records.length} 条可读消息`,
           fetchResult.reachedFetchLimit
@@ -1508,9 +1809,19 @@ async function handleCommand(msg: Api.Message): Promise<void> {
             : "已覆盖请求时间范围",
         ].join("；")
       : `已读取最近 ${fetchResult.records.length} 条可读消息`;
-    const scope = range.startTime && range.endTime
-      ? `${range.label}，${fetchNote}`
+    const scope = effectiveRange.startTime && effectiveRange.endTime
+      ? `${effectiveRange.label}，${fetchNote}`
       : `最近 ${fetchResult.records.length} 条可读消息`;
+    const prepared = isPersonAnalysis
+      ? preparePersonInput(fetchResult.records, request.target)
+      : isCompareMode && comparePreviousResult
+      ? prepareCompareInput(fetchResult.records, comparePreviousResult.records, scope, previousScope)
+      : special
+      ? prepareSpecialInput(mode, fetchResult.records, special.keyword)
+      : prepareSummaryInput(fetchResult.records);
+    const localSummaryStats = !isPersonAnalysis && !["rank", "links", "about", "compare"].includes(mode)
+      ? buildLocalSummaryStats(fetchResult.records, prepared)
+      : [];
     const summaryInput = isPersonAnalysis
       ? [
           "模式：指定人物分析",
@@ -1528,6 +1839,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       : [
           `摘要模式：${special ? special.title : "统一模板"}`,
           `摘要范围：${scope}`,
+          previousScope ? `对照范围：${previousScope}` : "",
           `群名：${chatName}`,
           special?.keyword ? `关键词：${special.keyword}` : "",
           `输入处理：${prepared.note}`,
@@ -1601,16 +1913,24 @@ const menuText = `▎Sum 摘要菜单
 <code>${mainPrefix}sum hot 6h</code> - 争议 / 吵架雷达
 <code>${mainPrefix}sum rank 24h</code> - 贡献榜 / 话唠榜
 <code>${mainPrefix}sum vibe 12h</code> - 群聊气氛小剧场
+<code>${mainPrefix}sum meme 24h</code> - 热梗榜 / 名场面
+<code>${mainPrefix}sum melon 24h</code> - 吃瓜速报
+<code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
 
 <b>实用整理</b>
 <code>${mainPrefix}sum links 24h</code> - 链接和资源整理
 <code>${mainPrefix}sum todo 12h</code> - 待办和未解决问题
 <code>${mainPrefix}sum about AI 24h</code> - 只看某个关键词
+<code>${mainPrefix}sum map 24h</code> - 人物关系网
+<code>${mainPrefix}sum story day</code> - 今日剧情线
+<code>${mainPrefix}sum compare day</code> - 今天 vs 昨天
+<code>${mainPrefix}sum track 24h</code> - 延续争议追踪
 
 <b>人物分析</b>
 <code>${mainPrefix}sum 6h @username</code>
 <code>${mainPrefix}sum user 200 张三</code>
 
+中文也能用：<code>热梗</code>、<code>吃瓜</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>。
 时间可以写：<code>30m</code>、<code>6h</code>、<code>24h</code>、<code>day</code>、<code>week</code>。`;
 
 const helpText = `▎聊天摘要
@@ -1625,6 +1945,10 @@ const helpText = `▎聊天摘要
 <code>${mainPrefix}sum menu</code> - 查看所有玩法
 <code>${mainPrefix}sum 6h @username</code> - 分析指定用户的人物表现
 <code>${mainPrefix}sum user 200 张三</code> - 分析最近 200 条里的张三
+<code>${mainPrefix}sum meme 24h</code> - 热梗榜
+<code>${mainPrefix}sum map 24h</code> - 人物关系网
+<code>${mainPrefix}sum compare day</code> - 今天 vs 昨天
+<code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
 
 长时间范围会自动分页抓取并按时间采样；人物分析会优先精确匹配 @用户名 / 用户ID / 昵称并附带上下文。
 
