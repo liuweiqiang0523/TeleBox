@@ -13,6 +13,7 @@ import { JSONFile } from "lowdb/node";
 import { getPrefixes } from "@utils/pluginManager";
 import type { GenerationContext } from "@utils/generationContext";
 import { tryGetCurrentGenerationContext } from "@utils/runtimeManager";
+import { CustomFile } from "teleproto/client/uploads";
 
 // HTML escape utility to prevent XSS when embedding user-supplied values into HTML messages
 function htmlEscape(value: unknown): string {
@@ -28,8 +29,13 @@ const prefixes = getPrefixes();
 const mainPrefix = prefixes[0];
 // 时区设置
 const CN_TIME_ZONE = "Asia/Shanghai";
-const BACKUP_UPLOAD_TIMEOUT_MS = 120_000;
+const BACKUP_UPLOAD_TIMEOUT_MS = 900_000;
+const BACKUP_UPLOAD_STALL_MS = 120_000;
 const BACKUP_UPLOAD_WORKERS = 1;
+const STANDARD_BACKUP_EXCLUDES = new Set([
+  path.join("assets", "ytdlp", "yt-dlp"),
+  path.join("assets", "speedtest", "speedtest"),
+]);
 
 function formatCN(date: Date): string {
   return date.toLocaleString("zh-CN", { timeZone: CN_TIME_ZONE });
@@ -48,6 +54,109 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 function describeDestination(dest: any, display: string): string {
   if (dest === "me") return "收藏夹 (Saved Messages)";
   return display || `<code>${String(dest)}</code>`;
+}
+
+function getUploadDestination(dest: any): any {
+  return dest === "me" ? new Api.InputPeerSelf() : dest;
+}
+
+function isMessageNotModifiedError(error: any): boolean {
+  const message = String(error?.message || error || "");
+  return (
+    message.includes("MESSAGE_NOT_MODIFIED") ||
+    message.includes("MessageNotModifiedError") ||
+    message.includes("message data is identical")
+  );
+}
+
+async function safeEditMessage(
+  msg: Api.Message,
+  options: { text: string; parseMode?: string }
+): Promise<void> {
+  try {
+    await msg.edit(options);
+  } catch (error) {
+    if (isMessageNotModifiedError(error)) return;
+    throw error;
+  }
+}
+
+async function uploadBackupFile(
+  client: any,
+  msg: Api.Message,
+  dest: any,
+  destDisplay: string,
+  backupPath: string,
+  caption: string,
+  sizeBytes: number
+): Promise<void> {
+  const uploadDest = getUploadDestination(dest);
+  const file = new CustomFile(path.basename(backupPath), sizeBytes, backupPath);
+  let lastProgress = 0;
+  let lastProgressAt = Date.now();
+  let lastEditAt = 0;
+
+  const editProgress = async (progress: number, phase = "上传中") => {
+    const now = Date.now();
+    const percent = Math.max(0, Math.min(100, Math.floor(progress * 100)));
+    if (now - lastEditAt < 12_000 && percent < 100) return;
+    lastEditAt = now;
+    await safeEditMessage(msg, {
+      text:
+        `📤 正在上传备份...\n\n` +
+        `🎯 目标: ${destDisplay}\n` +
+        `📦 大小: ${(sizeBytes / 1024 / 1024).toFixed(2)} MB\n` +
+        `📈 进度: ${percent}%\n` +
+        `🧩 阶段: ${phase}`,
+      parseMode: "html",
+    });
+  };
+
+  const progressCallback = (progress: number) => {
+    if (progress > lastProgress) {
+      lastProgress = progress;
+      lastProgressAt = Date.now();
+      void editProgress(progress).catch(() => {});
+    }
+  };
+
+  const stallWatch = setInterval(() => {
+    if (Date.now() - lastProgressAt > BACKUP_UPLOAD_STALL_MS) {
+      (progressCallback as any).isCanceled = true;
+    }
+  }, 10_000);
+
+  try {
+    await editProgress(0, "准备上传");
+    const fileHandle = await withTimeout(
+      client.uploadFile({
+        file,
+        workers: BACKUP_UPLOAD_WORKERS,
+        onProgress: progressCallback,
+        maxBufferSize: 8 * 1024 * 1024,
+      }),
+      BACKUP_UPLOAD_TIMEOUT_MS,
+      `上传到 ${dest}`
+    );
+
+    if ((progressCallback as any).isCanceled) {
+      throw new Error(`上传到 ${dest} 长时间无进度 (${Math.round(BACKUP_UPLOAD_STALL_MS / 1000)}s)`);
+    }
+
+    await editProgress(1, "发送文件消息");
+    await withTimeout(
+      client.sendFile(uploadDest, {
+        file: fileHandle,
+        caption,
+        forceDocument: true,
+        parseMode: "html",
+      }),
+      120_000,
+      `发送到 ${dest}`
+    );
+  } finally {
+    clearInterval(stallWatch);
+  }
 }
 
 async function formatEntity(
@@ -202,7 +311,8 @@ function trackChildProcess<T extends ChildProcess>(
 async function createBackup(
   dirs: string[],
   outputPath: string,
-  lifecycle: GenerationContext
+  lifecycle: GenerationContext,
+  excludeRelPaths: Set<string> = new Set()
 ): Promise<void> {
   const tempDir = path.join(
     os.tmpdir(),
@@ -221,7 +331,10 @@ async function createBackup(
       const baseName = path.basename(dir);
       const targetDir = path.join(backupDir, baseName);
 
-      copyDirRecursive(dir, targetDir);
+      copyDirRecursive(dir, targetDir, {
+        root: path.dirname(dir),
+        excludeRelPaths,
+      });
     }
 
     // 创建tar.gz
@@ -255,7 +368,18 @@ async function createBackup(
 }
 
 // 递归复制目录
-function copyDirRecursive(src: string, dest: string): void {
+function copyDirRecursive(
+  src: string,
+  dest: string,
+  options: { root?: string; excludeRelPaths?: Set<string> } = {}
+): void {
+  const relPath = options.root
+    ? path.relative(options.root, src).split(path.sep).join(path.posix.sep)
+    : "";
+  if (relPath && options.excludeRelPaths?.has(relPath)) {
+    return;
+  }
+
   fs.mkdirSync(dest, { recursive: true });
 
   const entries = fs.readdirSync(src, { withFileTypes: true });
@@ -263,9 +387,16 @@ function copyDirRecursive(src: string, dest: string): void {
   for (const entry of entries) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
+    const entryRelPath = options.root
+      ? path.relative(options.root, srcPath).split(path.sep).join(path.posix.sep)
+      : "";
+
+    if (entryRelPath && options.excludeRelPaths?.has(entryRelPath)) {
+      continue;
+    }
 
     if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
+      copyDirRecursive(srcPath, destPath, options);
     } else {
       fs.copyFileSync(srcPath, destPath);
     }
@@ -569,7 +700,7 @@ class BfPlugin extends Plugin {
             return;
           }
 
-          await createBackup(dirsToBackup, backupPath, lifecycle);
+          await createBackup(dirsToBackup, backupPath, lifecycle, STANDARD_BACKUP_EXCLUDES);
         }
 
         await msg.edit({ text: "📤 正在上传备份...", parseMode: "html" });
@@ -603,25 +734,16 @@ class BfPlugin extends Plugin {
           const destDisplay = describeDestination(dest, display);
           destDisplays.push(destDisplay);
           try {
-            await msg.edit({
+            await safeEditMessage(msg, {
               text:
                 `📤 正在上传备份...\n\n` +
                 `🎯 目标: ${destDisplay}\n` +
                 `📦 大小: ${(stats.size / 1024 / 1024).toFixed(2)} MB\n` +
-                `⏱️ 超过 ${Math.round(BACKUP_UPLOAD_TIMEOUT_MS / 1000)} 秒会自动保留到服务器`,
+                `📈 进度: 0%\n` +
+                `🧩 阶段: 准备上传`,
               parseMode: "html",
             });
-            await withTimeout(
-              client.sendFile(dest, {
-                file: backupPath,
-                caption,
-                forceDocument: true,
-                parseMode: "html",
-                workers: BACKUP_UPLOAD_WORKERS,
-              }),
-              BACKUP_UPLOAD_TIMEOUT_MS,
-              `发送到 ${dest}`
-            );
+            await uploadBackupFile(client, msg, dest, destDisplay, backupPath, caption, stats.size);
           } catch (err) {
             console.error(`发送到 ${dest} 失败:`, err);
             failedTargets.push(`${destDisplay}: ${String(err)}`);
