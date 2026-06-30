@@ -14,6 +14,16 @@ import { getPrefixes } from "@utils/pluginManager";
 import type { GenerationContext } from "@utils/generationContext";
 import { tryGetCurrentGenerationContext } from "@utils/runtimeManager";
 
+// HTML escape utility to prevent XSS when embedding user-supplied values into HTML messages
+function htmlEscape(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 const prefixes = getPrefixes();
 const mainPrefix = prefixes[0];
 // 时区设置
@@ -64,12 +74,12 @@ async function formatEntity(
   }
   const displayParts: string[] = [];
 
-  if (entity?.title) displayParts.push(entity.title);
-  if (entity?.firstName) displayParts.push(entity.firstName);
-  if (entity?.lastName) displayParts.push(entity.lastName);
+  if (entity?.title) displayParts.push(htmlEscape(entity.title));
+  if (entity?.firstName) displayParts.push(htmlEscape(entity.firstName));
+  if (entity?.lastName) displayParts.push(htmlEscape(entity.lastName));
   if (entity?.username)
     displayParts.push(
-      mention ? `@${entity.username}` : `<code>@${entity.username}</code>`
+      mention ? `@${htmlEscape(entity.username)}` : `<code>@${htmlEscape(entity.username)}</code>`
     );
 
   if (id) {
@@ -79,7 +89,7 @@ async function formatEntity(
         : `<a href="https://t.me/c/${id}">${id}</a>`
     );
   } else if (!target?.className) {
-    displayParts.push(`<code>${target}</code>`);
+    displayParts.push(`<code>${htmlEscape(target)}</code>`);
   }
 
   return {
@@ -519,18 +529,25 @@ class BfPlugin extends Plugin {
 
                   let tarError = "";
                   let gzipError = "";
+                  let settled = false;
                   tar.stderr.on("data", (d) => (tarError += d.toString()));
                   gzip.stderr.on("data", (d) => (gzipError += d.toString()));
 
-                  output.on("finish", () => resolve());
-                  output.on("error", reject);
-                  tar.on("error", reject);
-                  gzip.on("error", reject);
+                  const finish = (callback: () => void): void => {
+                    if (settled) return;
+                    settled = true;
+                    callback();
+                  };
+
+                  output.on("finish", () => finish(() => resolve()));
+                  output.on("error", (err) => finish(() => reject(err)));
+                  tar.on("error", () => finish(() => reject(new Error(`tar process error: ${tarError}`))));
+                  gzip.on("error", () => finish(() => reject(new Error(`gzip process error: ${gzipError}`))));
                   tar.on("close", (code) => {
-                    if (code !== 0) reject(new Error(`tar: ${tarError || code}`));
+                    if (code !== 0) finish(() => reject(new Error(`tar exited with code ${code}: ${tarError}`)));
                   });
                   gzip.on("close", (code) => {
-                    if (code !== 0) reject(new Error(`gzip: ${gzipError || code}`));
+                    if (code !== 0) finish(() => reject(new Error(`gzip exited with code ${code}: ${gzipError}`)));
                   });
                   throwIfAborted(lifecycle);
               }),
