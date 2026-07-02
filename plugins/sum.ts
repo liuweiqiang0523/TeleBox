@@ -108,10 +108,10 @@ type FooterMeta = {
 };
 
 const unifiedSummaryPrompt =
-  "你是 Telegram 群聊摘要助手。请把聊天记录提纯成中文 Markdown 摘要。\n\n【绝对要求】\n1. 无论摘要范围是 30 分钟、1 小时、6 小时还是更久，都必须使用同一个固定模板。\n2. 不得增删栏目，不得修改栏目标题，不得把短摘要改成其他标题。\n3. 禁止输出 JSON、代码块、解释性前言。\n4. 禁止照抄原文、逐条复述、流水账、凑数编造。\n5. 根据“摘要范围”和“消息数量”自动调整信息密度：时间越短，内容越短；时间越长，归纳层级越高。\n6. 没有明显内容的栏目，直接写“无明显亮点”“无明显金句”“无明确待办”，不要硬凑。\n7. 每条要点必须是一句话，尽量不超过 30 个中文字符。\n8. 禁止使用 **Markdown 加粗**；标题会自动加粗。\n9. 一级标题必须使用「# 📊 群聊消息摘要｜群名」，群名从输入里的「群名」字段获取；所有 Markdown 标题都会在发送时加粗。\n10. 多人重复同一观点时，合并为一个话题；同一用户连续多条短消息，应合并理解为一次表达。\n11. 无法确认的内容不要写成确定结论，使用“可能”“倾向于”“尚未明确”。\n12. 如果输入包含“本地统计”，基本信息、消息总量、活跃时段、核心用户和话唠榜必须以本地统计为准；采样消息只用于判断重点话题、亮点、金句和待办。\n13. 只能使用“聊天消息”里明确出现的信息；禁止补写未出现的新人入群、验证、管理员动作、系统事件或后续进展。\n14. 如果输入提示“短消息模式”，保留固定栏目，但每个栏目只写确有依据的 0-1 条；重点话题不足时不要硬凑。\n15. 重点话题数量必须参考输入里的“重点话题上限”：消息多时可以输出 4-6 个话题，消息少时减少；不要固定只写 3 个。\n\n【内容筛选规则】\n优先保留：决定、结论、争议、问题、行动项、重要链接、明确情绪变化。\n降低权重：寒暄、表情包、重复附和、单纯玩笑、无上下文短句。\n\n【重点分析对象】\n如果输入中包含“重点分析对象”，仍使用固定模板。\n摘要应优先围绕该用户的发言、观点、问题、行动项和情绪变化。\n需要结合上下文说明别人如何回应该用户。\n如果该用户发言很少，明确说明“该用户发言较少”，不要编造。\n\n【固定输出模板】\n# 📊 群聊消息摘要｜群名\n\n## ⏰ 基本信息\n- 🕒 时间范围：根据消息时间概括\n- 💬 消息总量：约 N 条\n- 📈 活跃时段：HH:mm-HH:mm\n- 👥 核心用户：用户A、用户B、用户C\n\n## 🏆 话唠榜\n🥇 用户A：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥈 用户B：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥉 用户C：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n\n## 🔥 重点话题\n### 1️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### 2️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### ... 按“重点话题上限”继续输出，最多不要超过上限\n\n## ✨ 本期亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n\n## 💬 金句 / 名场面\n- 🗣️ 用户：「原话或近似原话」\n- 🗣️ 用户：「原话或近似原话」\n\n## ✅ 待办 / 需要关注\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n\n## 🧭 一句话总结\n一句话概括最重要信息。";
+  "你是 Telegram 群聊摘要助手。请把聊天记录提纯成中文 Markdown 摘要。\n\n【绝对要求】\n1. 无论摘要范围是 30 分钟、1 小时、6 小时还是更久，都必须使用同一个固定模板。\n2. 不得增删固定栏目，不得修改栏目标题，不得把短摘要改成其他标题；“话题索引”是长日报/长摘要专用可选栏目，只按开关输出。\n3. 禁止输出 JSON、代码块、解释性前言。\n4. 禁止照抄原文、逐条复述、流水账、凑数编造。\n5. 根据“摘要范围”和“消息数量”自动调整信息密度：时间越短，内容越短；时间越长，归纳层级越高。\n6. 没有明显内容的栏目，直接写“无明显亮点”“无明显金句”“无明确待办”，不要硬凑。\n7. 每条要点必须是一句话，尽量不超过 30 个中文字符。\n8. 禁止使用 **Markdown 加粗**；标题会自动加粗。\n9. 一级标题必须使用「# 📊 群聊消息摘要｜群名」，群名从输入里的「群名」字段获取；所有 Markdown 标题都会在发送时加粗。\n10. 多人重复同一观点时，合并为一个话题；同一用户连续多条短消息，应合并理解为一次表达。\n11. 无法确认的内容不要写成确定结论，使用“可能”“倾向于”“尚未明确”。\n12. 如果输入包含“本地统计”，基本信息、消息总量、活跃时段、核心用户和话唠榜必须以本地统计为准；采样消息只用于判断重点话题、亮点、金句和待办。\n13. 只能使用“聊天消息”里明确出现的信息；禁止补写未出现的新人入群、验证、管理员动作、系统事件或后续进展。\n14. 如果输入提示“短消息模式”，保留固定栏目，但每个栏目只写确有依据的 0-1 条；重点话题不足时不要硬凑。\n15. 重点话题数量必须参考输入里的“重点话题上限”：消息多时可以输出 4-6 个话题，消息少时减少；不要固定只写 3 个。\n16. 如果输入包含“话题索引：启用”，必须在基本信息后输出“## 🗂️ 话题索引”，先列 5-6 个话题标题和一句话说明，再展开重点话题；没有该提示时不要输出话题索引。\n\n【内容筛选规则】\n优先保留：决定、结论、争议、问题、行动项、重要链接、明确情绪变化。\n降低权重：寒暄、表情包、重复附和、单纯玩笑、无上下文短句。\n\n【重点分析对象】\n如果输入中包含“重点分析对象”，仍使用固定模板。\n摘要应优先围绕该用户的发言、观点、问题、行动项和情绪变化。\n需要结合上下文说明别人如何回应该用户。\n如果该用户发言很少，明确说明“该用户发言较少”，不要编造。\n\n【固定输出模板】\n# 📊 群聊消息摘要｜群名\n\n## ⏰ 基本信息\n- 🕒 时间范围：根据消息时间概括\n- 💬 消息总量：约 N 条\n- 📈 活跃时段：HH:mm-HH:mm\n- 👥 核心用户：用户A、用户B、用户C\n\n[仅在输入包含“话题索引：启用”时插入]\n## 🗂️ 话题索引\n- 1. 话题标题｜一句话说明\n- 2. 话题标题｜一句话说明\n- ... 最多 6 条\n\n## 🏆 话唠榜\n🥇 用户A：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥈 用户B：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥉 用户C：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n\n## 🔥 重点话题\n### 1️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### 2️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### ... 按“重点话题上限”继续输出，最多不要超过上限\n\n## ✨ 本期亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n\n## 💬 金句 / 名场面\n- 🗣️ 用户：「原话或近似原话」\n- 🗣️ 用户：「原话或近似原话」\n\n## ✅ 待办 / 需要关注\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n\n## 🧭 一句话总结\n一句话概括最重要信息。";
 
 const personAnalysisPrompt =
-  "你是 Telegram 群聊人物分析助手。请只分析指定对象在这段聊天里的表现，不要输出群聊摘要。\n\n【绝对要求】\n1. 只围绕“分析对象”本人，以及别人对他的直接回应来判断。\n2. 禁止输出「群聊消息摘要」「话唠榜」「重点话题」「本期亮点」「待办」等群摘要栏目。\n3. 禁止编造。发言少就明确写“样本较少，只能弱判断”。\n4. 输入中带 ⭐ 的消息才是分析对象本人；没有 ⭐ 时必须说明“未找到精确匹配发言”。\n5. 结论要短，整体控制在 220-420 中文字。\n6. 每一项都要基于聊天记录，不要泛泛夸人。\n7. 输出中文，不要代码块，不要解释前言。\n8. 禁止使用 **Markdown 加粗**；标题会自动加粗。\n9. 如果输入包含“人物分析本地统计”，样本数、本人发言条数、时间范围必须以本地统计为准；不要把“上下文输入条数”误写成本人发言总数。\n10. 标题里的时间范围优先使用请求范围；目标只在其中一段时间出现时，在“基本”里说明目标首尾发言时间。\n11. 代表发言只能引用输入中带 ⭐ 的本人消息；没有合适短句就写“无明显短句”。\n\n【固定输出模板】\n# 📋 @分析对象 人物分析｜时间范围\n\n🧾 样本：本人 N 条｜上下文 N 条｜匹配身份\n🕒 基本：活跃度、主要出现方式、互动对象\n🧠 风格：说话方式和情绪气质\n💡 关注：最常聊/最在意的内容\n🔄 特点：在群里的典型行为模式\n🗣️ 代表发言：\n- 用户：「原话」｜说明一句话\n- 用户：「原话」｜说明一句话\n🧭 总结：一句话判断这个人给人的整体感觉";
+  "你是 Telegram 群聊人物分析助手。请只分析指定对象在这段聊天里的表现，不要输出群聊摘要。\n\n【绝对要求】\n1. 只围绕“分析对象”本人，以及别人对他的直接回应来判断。\n2. 禁止输出「群聊消息摘要」「话唠榜」「重点话题」「本期亮点」「待办」等群摘要栏目。\n3. 禁止编造。发言少就明确写“样本较少，只能弱判断”。\n4. 输入中带 ⭐ 的消息才是分析对象本人；没有 ⭐ 时必须说明“未找到精确匹配发言”。\n5. 结论要短，整体控制在 260-520 中文字。\n6. 每一项都要基于聊天记录，不要泛泛夸人。\n7. 输出中文，不要代码块，不要解释前言。\n8. 禁止使用 **Markdown 加粗**；标题会自动加粗。\n9. 如果输入包含“人物分析本地统计”，样本数、本人发言条数、时间范围必须以本地统计为准；不要把“上下文输入条数”误写成本人发言总数。\n10. 标题里的时间范围优先使用请求范围；目标只在其中一段时间出现时，在“基本”里说明目标首尾发言时间。\n11. 代表发言只能引用输入中带 ⭐ 的本人消息；没有合适短句就写“无明显短句”。\n12. 如果输入包含“人物近期变化”，必须输出“🔁 最近变化”，对比当前范围和对照范围的活跃度、关注点、语气或互动对象变化；无明显变化就明确写无明显变化。\n\n【固定输出模板】\n# 📋 @分析对象 人物分析｜时间范围\n\n🧾 样本：本人 N 条｜上下文 N 条｜匹配身份\n🕒 基本：活跃度、主要出现方式、互动对象\n🧠 风格：说话方式和情绪气质\n💡 关注：最常聊/最在意的内容\n🔄 特点：在群里的典型行为模式\n🔁 最近变化：相比对照范围，活跃度/关注点/语气/互动对象有什么变化\n🗣️ 代表发言：\n- 用户：「原话」｜说明一句话\n- 用户：「原话」｜说明一句话\n🧭 总结：一句话判断这个人给人的整体感觉";
 
 const templatePolishPrompt =
   "\n\n【统一观感优化】\n1. 第一眼先给结论：每个模板的第一个内容栏目必须直接说重点，不要铺垫。\n2. 短消息范围不要硬凑：如果输入很少，每个栏目只写确有依据的 0-1 条；没有就写“无明显”。\n3. 长消息范围要归纳：优先写主线、分歧、结论、行动项，不要堆散点。\n4. 每条 bullet 只表达一个判断，尽量一行内结束。\n5. 金句、代表发言、名场面必须来自输入原文或非常接近原文；拿不准就不写。\n6. 不要输出空 bullet、半截 bullet、孤立的符号或模板残留。\n7. 结尾栏目必须收束成一句人能看懂的结论。";
@@ -122,7 +122,7 @@ const modePrompts: Record<Exclude<SumMode, "summary" | "person">, string> = {
   rank:
     "你是 Telegram 群聊贡献榜助手。根据本地统计和聊天内容，生成轻松但不冒犯的贡献榜。不要羞辱、贴负面标签或制造人身攻击。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 统计数字必须优先使用输入里的本地统计。\n4. 每个用户说明控制在 1-2 句，称号要有趣但不冒犯。\n\n【输出模板】\n# 🏅 群聊贡献榜｜群名\n\n## 📊 榜单速览\n🥇 发言最多：用户｜约 N 条｜称号：简短称号\n🥈 提问最多：用户｜约 N 次｜称号：简短称号\n🥉 资源贡献：用户｜约 N 个链接｜称号：简短称号\n\n## 🧠 角色观察\n- 👤 用户：贡献方式一句话；代表话题一句话。\n- 👤 用户：贡献方式一句话；代表话题一句话。\n- 👤 用户：贡献方式一句话；代表话题一句话。\n\n## 🎭 今日群像\n一句话概括这段时间的群聊风格。",
   links:
-    "你是 Telegram 群聊资源整理助手。只整理输入里的链接、资源、工具、文章、项目、图片/视频线索。不要编造没有出现的链接。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. URL 必须来自输入，不要改写 URL。\n4. 没有链接就明确写“未发现链接”。\n\n【输出模板】\n# 🔗 链接与资源整理｜群名\n\n## 📌 重要链接\n- 🔗 用途/标题：URL\n  来源：用户｜时间｜备注一句话\n- 🔗 用途/标题：URL\n  来源：用户｜时间｜备注一句话\n\n## 🧩 主题归类\n- 📁 主题：包含哪些链接 / 用途\n- 📁 主题：包含哪些链接 / 用途\n\n## 🧭 最值得回看\n- ⭐ 资源：原因一句话",
+    "你是 Telegram 群聊资源整理助手。只整理输入里的链接、资源、工具、文章、项目、图片/视频线索。不要编造没有出现的链接。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. URL 必须来自输入，不要改写 URL。\n4. 没有链接就明确写“未发现链接”。\n5. 如果输入包含“本地域名归类”，域名归类必须优先参考本地统计。\n\n【输出模板】\n# 🔗 链接与资源整理｜群名\n\n## 🗂️ 域名归类\n- 📁 代码 / GitHub：域名｜用途一句话\n- 📁 视频：域名｜用途一句话\n- 📁 商家 / 服务：域名｜用途一句话\n- 📁 文档 / 知识库：域名｜用途一句话\n\n## 📌 重要链接\n- 🔗 用途/标题：URL\n  来源：用户｜时间｜备注一句话\n- 🔗 用途/标题：URL\n  来源：用户｜时间｜备注一句话\n\n## 🧩 主题归类\n- 📁 主题：包含哪些链接 / 用途\n- 📁 主题：包含哪些链接 / 用途\n\n## 🧭 最值得回看\n- ⭐ 资源：原因一句话",
   todo:
     "你是 Telegram 群聊待办提取助手。只提取任务、决定、问题、需要跟进的事项。不要把闲聊写成待办。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 不确定负责人就写“未明确”。\n4. 没有待办就写“无明确待办”。\n\n【输出模板】\n# ✅ 待办 / 需要关注｜群名\n\n## 🔲 明确待办\n- 👤 负责人：事项｜时间/条件｜依据一句话\n- 👤 负责人：事项｜时间/条件｜依据一句话\n\n## ❓ 未解决问题\n- ❔ 问题：当前卡点｜需要谁确认\n- ❔ 问题：当前卡点｜需要谁确认\n\n## 🧭 下一步\n- 🔎 最值得先处理：一句话",
   catchup:
@@ -318,7 +318,7 @@ function parseSummaryRequest(
 
   const duration = parseDuration(sub);
   const isCount = /^\d+$/.test(sub || "");
-  if (duration || isCount || !sub) {
+  if (duration || isCount || isRangeToken(sub) || !sub) {
     return { rangeToken: sub, target: args.join(" ").trim() };
   }
 
@@ -348,6 +348,7 @@ function parseSpecialRequest(sub: string | undefined, args: string[]): SpecialRe
   if (!mode) return null;
 
   if (mode === "day" || mode === "today" || mode === "日报") {
+    if (args.join(" ").trim()) return null;
     return {
       mode: "summary",
       rangeToken: "day",
@@ -356,6 +357,7 @@ function parseSpecialRequest(sub: string | undefined, args: string[]): SpecialRe
     };
   }
   if (mode === "yesterday" || mode === "yd" || mode === "昨天") {
+    if (args.join(" ").trim()) return null;
     return {
       mode: "summary",
       rangeToken: "yesterday",
@@ -364,6 +366,7 @@ function parseSpecialRequest(sub: string | undefined, args: string[]): SpecialRe
     };
   }
   if (mode === "week" || mode === "weekly" || mode === "周报") {
+    if (args.join(" ").trim()) return null;
     return {
       mode: "summary",
       rangeToken: "week",
@@ -1394,8 +1397,109 @@ function buildPersonLocalStats(
   ];
 }
 
+function buildPersonTopicWords(records: ChatMessageRecord[], limit = 8): string {
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    const content = record.content.replace(URL_PATTERN, " ").replace(/\[[^\]]+\]/g, " ");
+    const tokens = content.match(/[A-Za-z0-9._-]{2,}|[\u4e00-\u9fa5]{2,8}/g) || [];
+    for (const token of tokens) {
+      const normalized = token.toLowerCase();
+      if (normalized.length < 2 || MEME_STOP_WORDS.has(normalized)) continue;
+      counts.set(token, (counts.get(token) || 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([word, count]) => `${word} ${count}`)
+    .join("、") || "无明显高频词";
+}
+
+function buildPersonChangeStats(
+  currentRecords: ChatMessageRecord[],
+  previousRecords: ChatMessageRecord[] | null,
+  target: string,
+  currentScope: string,
+  previousScope: string,
+  identityCache?: IdentityCache,
+): string[] {
+  if (!previousRecords) {
+    return [
+      "人物近期变化：",
+      "未提供对照时段；如果使用 day/24h 等时间范围，会自动对比前一段同等长度时间。",
+    ];
+  }
+
+  const currentMatched = sortRecords(currentRecords).filter((record) => recordMatchesTarget(record, target, identityCache));
+  const previousMatched = sortRecords(previousRecords).filter((record) => recordMatchesTarget(record, target, identityCache));
+  const delta = currentMatched.length - previousMatched.length;
+  const ratio = previousMatched.length > 0 ? (currentMatched.length / previousMatched.length).toFixed(1) : "";
+  const activity = delta > 5
+    ? `明显更活跃（+${delta} 条${ratio ? `，约 ${ratio} 倍` : ""}）`
+    : delta < -5
+    ? `明显更少发言（${delta} 条${ratio ? `，约 ${ratio} 倍` : ""}）`
+    : `活跃度接近（变化 ${delta} 条）`;
+
+  return [
+    "人物近期变化：",
+    `当前范围：${currentScope}；本人 ${currentMatched.length} 条；高频关注：${buildPersonTopicWords(currentMatched)}`,
+    `对照范围：${previousScope || "前一段同等长度时间"}；本人 ${previousMatched.length} 条；高频关注：${buildPersonTopicWords(previousMatched)}`,
+    `变化提示：${activity}；请结合聊天上下文判断关注点、语气和互动对象是否变化。`,
+  ];
+}
+
 function extractUrls(text: string): string[] {
   return Array.from(text.matchAll(URL_PATTERN)).map((match) => match[0]);
+}
+
+function getUrlDomain(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "unknown";
+  }
+}
+
+function classifyUrlDomain(domain: string): string {
+  if (/github\.com|gitlab\.com|bitbucket\.org/.test(domain)) return "代码 / GitHub";
+  if (/youtube\.com|youtu\.be|bilibili\.com|vimeo\.com/.test(domain)) return "视频";
+  if (/t\.me|telegram\.me|telegram\.org/.test(domain)) return "Telegram";
+  if (/docs\.|notion\.site|notion\.so|gitbook\.io|readthedocs\.io|wikipedia\.org/.test(domain)) return "文档 / 知识库";
+  if (/amazon\.|ebay\.|taobao\.|tmall\.|jd\.com|1688\.com|ovh\.|kimsufi\.|hetzner\.|netcup\.|cloudflare\.|aliyun\.|vultr\.|digitalocean\./.test(domain)) return "商家 / 服务";
+  if (/x\.com|twitter\.com|reddit\.com|nodeseek\.com|lowendtalk\.com/.test(domain)) return "社区 / 讨论";
+  if (/imgur\.com|postimg\.cc|ibb\.co|pixhost\.|image/.test(domain)) return "图片 / 媒体";
+  return "其他";
+}
+
+function buildLinkDomainStats(linkRecords: Array<{ record: ChatMessageRecord; url: string }>): string[] {
+  const groups = new Map<string, Map<string, { count: number; samples: string[] }>>();
+  for (const item of linkRecords) {
+    const domain = getUrlDomain(item.url);
+    const category = classifyUrlDomain(domain);
+    const domains = groups.get(category) || new Map<string, { count: number; samples: string[] }>();
+    const stat = domains.get(domain) || { count: 0, samples: [] };
+    stat.count += 1;
+    if (stat.samples.length < 2) stat.samples.push(item.url);
+    domains.set(domain, stat);
+    groups.set(category, domains);
+  }
+
+  const lines = [...groups.entries()]
+    .sort((a, b) => {
+      const ac = [...a[1].values()].reduce((sum, item) => sum + item.count, 0);
+      const bc = [...b[1].values()].reduce((sum, item) => sum + item.count, 0);
+      return bc - ac;
+    })
+    .flatMap(([category, domains]) => {
+      const domainText = [...domains.entries()]
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 6)
+        .map(([domain, stat]) => `${domain} ${stat.count} 个`)
+        .join("；");
+      return [`${category}：${domainText}`];
+    });
+
+  return ["本地域名归类：", ...(lines.length ? lines : ["无可归类链接"])];
 }
 
 function isQuestion(text: string): boolean {
@@ -1716,12 +1820,14 @@ function prepareRankInput(records: ChatMessageRecord[]): PreparedInput {
 
 function prepareLinksInput(records: ChatMessageRecord[]): PreparedInput {
   const linkLines: string[] = [];
+  const linkRecords: Array<{ record: ChatMessageRecord; url: string }> = [];
   const seen = new Set<string>();
   for (const record of records) {
     for (const url of extractUrls(record.content)) {
       const normalized = url.replace(/[),.;，。；]+$/, "");
       if (seen.has(normalized)) continue;
       seen.add(normalized);
+      linkRecords.push({ record, url: normalized });
       linkLines.push(recordToLine({ ...record, content: normalized }, { maxContentChars: 500 }));
       if (linkLines.length >= 120) break;
     }
@@ -1736,8 +1842,13 @@ function prepareLinksInput(records: ChatMessageRecord[]): PreparedInput {
   }
 
   return {
-    lines: linkLines,
-    note: `提取到 ${seen.size} 个去重链接，最多输入前 ${linkLines.length} 个`,
+    lines: [
+      ...buildLinkDomainStats(linkRecords),
+      "",
+      "去重链接明细：",
+      ...linkLines,
+    ],
+    note: `提取到 ${seen.size} 个去重链接，已按域名归类并输入前 ${linkLines.length} 个明细`,
   };
 }
 
@@ -2159,6 +2270,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
     await msg.edit({ text: "⏳ 正在读取消息并生成摘要..." });
 
     const mode: SumMode = special?.mode || (request.target ? "person" : "summary");
+    const isPersonAnalysis = mode === "person";
     const isCompareMode = mode === "compare";
     const effectiveRange = isCompareMode && (!range.startTime || !range.endTime)
       ? resolveRangeToken("day")
@@ -2169,7 +2281,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
     let comparePreviousResult: MessageFetchResult | null = null;
     let previousScope = "";
 
-    if (isCompareMode && effectiveRange.startTime && effectiveRange.endTime) {
+    if ((isCompareMode || isPersonAnalysis) && effectiveRange.startTime && effectiveRange.endTime) {
       const spanSeconds = Math.max(60, effectiveRange.endTime - effectiveRange.startTime + 1);
       const previousEnd = effectiveRange.startTime - 1;
       const previousStart = previousEnd - spanSeconds + 1;
@@ -2188,12 +2300,14 @@ async function handleCommand(msg: Api.Message): Promise<void> {
 
     const chatName = getChatDisplayName(msg, chatId);
     const density = getSummaryDensity(effectiveRange.durationMinutes, fetchResult.records.length);
-    const isPersonAnalysis = mode === "person";
     const volumeMode = fetchResult.records.length < 30
       ? "短消息模式：内容少时不要硬凑栏目，每栏只写确有依据的内容。"
       : fetchResult.records.length >= 520
       ? "长消息模式：先按时间理解主线，再输出全局结论。"
       : "标准模式：兼顾本地统计和代表性消息。";
+    const topicIndexEnabled = !isPersonAnalysis && mode === "summary" && Boolean(
+      effectiveRange.durationMinutes && (effectiveRange.durationMinutes >= 360 || fetchResult.records.length >= 500),
+    );
     const fetchNote = effectiveRange.startTime && effectiveRange.endTime
       ? [
           `已读取 ${fetchResult.fetchedPages} 页 / ${fetchResult.records.length} 条可读消息`,
@@ -2227,6 +2341,15 @@ async function handleCommand(msg: Api.Message): Promise<void> {
           "",
           ...buildPersonLocalStats(fetchResult.records, request.target, prepared, identityCache),
           "",
+          ...buildPersonChangeStats(
+            fetchResult.records,
+            comparePreviousResult?.records || null,
+            request.target,
+            scope,
+            previousScope,
+            identityCache,
+          ),
+          "",
           "聊天消息：",
           prepared.lines.join("\n"),
         ].join("\n")
@@ -2238,6 +2361,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
           special?.keyword ? `关键词：${special.keyword}` : "",
           `输入处理：${prepared.note}`,
           `输出模式：${volumeMode}`,
+          topicIndexEnabled ? "话题索引：启用，先列 5-6 个话题标题，再展开重点话题。" : "",
           `摘要密度：${density.label}`,
           `总字数目标：${density.targetLength}`,
           `重点话题上限：${density.topicLimit}`,
