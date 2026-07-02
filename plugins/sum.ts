@@ -52,6 +52,10 @@ const configPath = path.join(
   createDirectoryInAssets("sum"),
   "config.json",
 );
+const identityCachePath = path.join(
+  createDirectoryInAssets("sum"),
+  "identity-cache.json",
+);
 
 type ProviderType = "openai" | "gemini";
 
@@ -70,6 +74,31 @@ type SumConfig = ProviderConfig & {
   maxOutputLength: number;
   replyMode: boolean;
   fallbacks?: ProviderConfig[];
+};
+
+type CachedIdentity = {
+  senderId: string;
+  names: string[];
+  usernames: string[];
+  firstSeen: number;
+  lastSeen: number;
+  count: number;
+};
+
+type IdentityCache = {
+  users: Record<string, CachedIdentity>;
+};
+
+type ProviderUseInfo = {
+  name: string;
+  type: ProviderType;
+  baseUrl: string;
+  model: string;
+};
+
+type SummaryResult = {
+  content: string;
+  provider: ProviderUseInfo;
 };
 
 const unifiedSummaryPrompt =
@@ -186,6 +215,10 @@ async function getDB() {
   return JSONFilePreset<SumConfig>(configPath, defaultConfig);
 }
 
+async function getIdentityDB() {
+  return JSONFilePreset<IdentityCache>(identityCachePath, { users: {} });
+}
+
 function htmlEscape(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -285,7 +318,7 @@ function parseSummaryRequest(
 
 function isRangeToken(value: string | undefined): boolean {
   if (!value) return false;
-  return Boolean(parseDuration(value)) || /^\d+$/.test(value);
+  return Boolean(parseDuration(value)) || /^\d+$/.test(value) || ["day", "today", "yesterday", "yd", "week", "weekly"].includes(value.toLowerCase());
 }
 
 function parseRangeAndRest(
@@ -829,6 +862,50 @@ function recordToLine(
   return `${marker}[${time}] ${identityParts.join(" " )}: ${content}`;
 }
 
+function addUnique(values: string[], value: string, limit = 8): string[] {
+  const text = value.trim();
+  if (!text) return values;
+  const exists = values.some((item) => normalizeTargetText(item) === normalizeTargetText(text));
+  if (exists) return values;
+  return [...values, text].slice(-limit);
+}
+
+async function updateIdentityCache(records: ChatMessageRecord[]): Promise<IdentityCache> {
+  const db = await getIdentityDB();
+  const now = Math.floor(Date.now() / 1000);
+  db.data.users ||= {};
+
+  for (const record of records) {
+    const key = getUserKey(record);
+    if (!key) continue;
+
+    const existing = db.data.users[key] || {
+      senderId: record.senderId,
+      names: [],
+      usernames: [],
+      firstSeen: record.timestamp || now,
+      lastSeen: 0,
+      count: 0,
+    };
+    existing.senderId = existing.senderId || record.senderId;
+    existing.names = addUnique(existing.names || [], record.sender);
+    if (record.firstName) existing.names = addUnique(existing.names, record.firstName);
+    if (record.lastName) existing.names = addUnique(existing.names, record.lastName);
+    if (record.username) existing.usernames = addUnique(existing.usernames || [], record.username);
+    existing.firstSeen = Math.min(existing.firstSeen || record.timestamp || now, record.timestamp || now);
+    existing.lastSeen = Math.max(existing.lastSeen || 0, record.timestamp || now);
+    existing.count = (existing.count || 0) + 1;
+    db.data.users[key] = existing;
+  }
+
+  const users = Object.entries(db.data.users)
+    .sort((a, b) => (b[1].lastSeen || 0) - (a[1].lastSeen || 0))
+    .slice(0, 2000);
+  db.data.users = Object.fromEntries(users);
+  await db.write();
+  return db.data;
+}
+
 async function getChatMessageRecords(chatId: string, count: number): Promise<MessageFetchResult> {
   const client = await getGlobalClient();
   if (!client) throw new Error("Telegram 客户端未初始化");
@@ -984,7 +1061,23 @@ function sampleRecords(records: ChatMessageRecord[], maxLines: number): { record
   };
 }
 
-function prepareSummaryInput(records: ChatMessageRecord[]): PreparedInput {
+function compactLinesToBudget(lines: string[], budget: number): string[] {
+  if (lines.join("\n").length <= budget) return lines;
+  const kept: string[] = [];
+  let used = 0;
+  for (const line of lines) {
+    const next = used + line.length + 1;
+    if (next > budget) {
+      if (!kept.some((item) => item.includes("输入过长"))) kept.push("[系统提示：输入过长，后续代表性消息已省略]");
+      break;
+    }
+    kept.push(line);
+    used = next;
+  }
+  return kept;
+}
+
+function prepareFlatSummaryInput(records: ChatMessageRecord[]): PreparedInput {
   let maxLines = MAX_SUMMARY_SAMPLE_LINES;
   let maxContentChars = 180;
   let sampled = sampleRecords(records, maxLines);
@@ -1000,6 +1093,64 @@ function prepareSummaryInput(records: ChatMessageRecord[]): PreparedInput {
   return { lines, note: sampled.note };
 }
 
+function segmentRecordsByTime(records: ChatMessageRecord[], maxSegments = 8): ChatMessageRecord[][] {
+  const sorted = sortRecords(records);
+  if (sorted.length <= 1) return sorted.length ? [sorted] : [];
+  const first = sorted[0].timestamp;
+  const last = sorted[sorted.length - 1].timestamp;
+  const span = Math.max(1, last - first + 1);
+  const segmentCount = Math.min(maxSegments, Math.max(2, Math.ceil(sorted.length / 260)));
+  const segmentSeconds = Math.max(1, Math.ceil(span / segmentCount));
+  const segments = Array.from({ length: segmentCount }, () => [] as ChatMessageRecord[]);
+
+  for (const record of sorted) {
+    const index = Math.min(segmentCount - 1, Math.floor((record.timestamp - first) / segmentSeconds));
+    segments[index].push(record);
+  }
+  return segments.filter((segment) => segment.length > 0);
+}
+
+function segmentSummaryLines(segment: ChatMessageRecord[], index: number, total: number): string[] {
+  const sorted = sortRecords(segment);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const prepared = prepareFlatSummaryInput(sorted);
+  const topUsers = topUserStats(sorted, 4).map((user) => `${user.sender} ${user.count} 条`).join("；") || "无";
+  const activeHours = buildActiveHourStats(sorted, 2).join("；") || "无";
+  const linkCount = sorted.reduce((sum, record) => sum + extractUrls(record.content).length, 0);
+  const questionCount = sorted.reduce((sum, record) => sum + (isQuestion(record.content) ? 1 : 0), 0);
+
+  return [
+    `分段 ${index + 1}/${total}：${formatDate(new Date(first.timestamp * 1000))} 至 ${formatDate(new Date(last.timestamp * 1000))}`,
+    `本段统计：${sorted.length} 条；核心用户：${topUsers}；活跃时段：${activeHours}；链接 ${linkCount}；问题 ${questionCount}`,
+    ...prepared.lines.slice(0, Math.max(18, Math.floor(150 / total))),
+  ];
+}
+
+function prepareSegmentedSummaryInput(records: ChatMessageRecord[]): PreparedInput {
+  const segments = segmentRecordsByTime(records);
+  const lines = [
+    "长时间范围分段输入：",
+    "请先分别理解每个时间段，再归纳全局主线；总量、核心用户和活跃时段必须以本地统计为准。",
+    "",
+    ...segments.flatMap((segment, index) => [
+      ...segmentSummaryLines(segment, index, segments.length),
+      "",
+    ]),
+  ];
+
+  const compacted = compactLinesToBudget(lines, SUMMARY_MESSAGE_CHAR_BUDGET);
+  return {
+    lines: compacted,
+    note: `原始 ${records.length} 条，已按时间切成 ${segments.length} 段；每段保留统计和代表性消息${compacted.length < lines.length ? "，并按预算压缩" : ""}`,
+  };
+}
+
+function prepareSummaryInput(records: ChatMessageRecord[]): PreparedInput {
+  if (records.length >= 520) return prepareSegmentedSummaryInput(records);
+  return prepareFlatSummaryInput(records);
+}
+
 function normalizeTargetText(value: string): string {
   return value
     .trim()
@@ -1008,15 +1159,84 @@ function normalizeTargetText(value: string): string {
     .toLowerCase();
 }
 
-function recordMatchesTarget(record: ChatMessageRecord, target: string): boolean {
+function parseKeywordQuery(keyword: string): { positives: string[]; negatives: string[]; label: string } {
+  const tokens = Array.from(keyword.matchAll(/"([^"]+)"|'([^']+)'|[^,\s，、]+/g))
+    .map((match) => (match[1] || match[2] || match[0]).trim())
+    .filter(Boolean);
+  const positives: string[] = [];
+  const negatives: string[] = [];
+
+  for (const token of tokens) {
+    if (token.startsWith("-") && token.length > 1) {
+      negatives.push(token.slice(1));
+      continue;
+    }
+    positives.push(token.replace(/^\+/, ""));
+  }
+
+  return {
+    positives: positives.filter(Boolean),
+    negatives: negatives.filter(Boolean),
+    label: [
+      positives.length ? `包含：${positives.join(" / ")}` : "包含：未指定",
+      negatives.length ? `排除：${negatives.join(" / ")}` : "",
+    ].filter(Boolean).join("；"),
+  };
+}
+
+function recordMatchesKeywordQuery(record: ChatMessageRecord, query: { positives: string[]; negatives: string[] }): boolean {
+  const normalizedContent = normalizeTargetText(record.content);
+  if (!normalizedContent) return false;
+  const hitsPositive = query.positives.length
+    ? query.positives.some((term) => normalizedContent.includes(normalizeTargetText(term)))
+    : false;
+  if (!hitsPositive) return false;
+  const hitsNegative = query.negatives.some((term) => normalizedContent.includes(normalizeTargetText(term)));
+  return !hitsNegative;
+}
+
+function cachedIdentityMatches(record: ChatMessageRecord, target: string, identityCache?: IdentityCache): boolean {
+  if (!identityCache) return false;
+  const rawTarget = target.trim();
+  const normalizedTarget = normalizeTargetText(rawTarget);
+  if (!normalizedTarget) return false;
+
+  const users = identityCache.users || {};
+  const cached = users[getUserKey(record)] || (record.senderId ? users[record.senderId] : undefined);
+  if (!cached) return false;
+
+  const usernames = cached.usernames || [];
+  const names = cached.names || [];
+  if (rawTarget.startsWith("@")) {
+    return usernames.some((username) => normalizeTargetText(username) === normalizedTarget);
+  }
+  if (/^\d+$/.test(normalizedTarget)) {
+    return normalizeTargetText(cached.senderId) === normalizedTarget;
+  }
+
+  return [...names, ...usernames].some((value) => {
+    const candidate = normalizeTargetText(value);
+    return (
+      candidate === normalizedTarget ||
+      (normalizedTarget.length >= 2 && candidate.includes(normalizedTarget)) ||
+      (candidate.length >= 2 && normalizedTarget.includes(candidate))
+    );
+  });
+}
+
+function recordMatchesTarget(record: ChatMessageRecord, target: string, identityCache?: IdentityCache): boolean {
   const rawTarget = target.trim();
   const normalizedTarget = normalizeTargetText(rawTarget);
   if (!normalizedTarget) return false;
 
   const username = normalizeTargetText(record.username);
   const senderId = normalizeTargetText(record.senderId);
-  if (rawTarget.startsWith("@")) return Boolean(username) && username === normalizedTarget;
-  if (/^\d+$/.test(normalizedTarget)) return Boolean(senderId) && senderId === normalizedTarget;
+  if (rawTarget.startsWith("@")) {
+    return (Boolean(username) && username === normalizedTarget) || cachedIdentityMatches(record, target, identityCache);
+  }
+  if (/^\d+$/.test(normalizedTarget)) {
+    return (Boolean(senderId) && senderId === normalizedTarget) || cachedIdentityMatches(record, target, identityCache);
+  }
 
   const fullName = [record.firstName, record.lastName].filter(Boolean).join("");
   const candidates = [record.sender, record.firstName, record.lastName, fullName, record.username]
@@ -1028,7 +1248,7 @@ function recordMatchesTarget(record: ChatMessageRecord, target: string): boolean
       candidate === normalizedTarget ||
       (normalizedTarget.length >= 2 && candidate.includes(normalizedTarget)) ||
       (candidate.length >= 2 && normalizedTarget.includes(candidate)),
-  );
+  ) || cachedIdentityMatches(record, target, identityCache);
 }
 
 function buildPersonContextIndexes(total: number, matchedIndexes: number[], limit: number): number[] {
@@ -1054,9 +1274,9 @@ function buildPersonContextIndexes(total: number, matchedIndexes: number[], limi
   return pickEvenValues(matchedIndexes, limit).sort((a, b) => a - b);
 }
 
-function preparePersonInput(records: ChatMessageRecord[], target: string): PreparedInput {
+function preparePersonInput(records: ChatMessageRecord[], target: string, identityCache?: IdentityCache): PreparedInput {
   const matchedIndexes = records
-    .map((record, index) => (recordMatchesTarget(record, target) ? index : -1))
+    .map((record, index) => (recordMatchesTarget(record, target, identityCache) ? index : -1))
     .filter((index) => index >= 0);
 
   if (!matchedIndexes.length) {
@@ -1124,9 +1344,14 @@ function preparePersonInput(records: ChatMessageRecord[], target: string): Prepa
   };
 }
 
-function buildPersonLocalStats(records: ChatMessageRecord[], target: string, prepared: PreparedInput): string[] {
+function buildPersonLocalStats(
+  records: ChatMessageRecord[],
+  target: string,
+  prepared: PreparedInput,
+  identityCache?: IdentityCache,
+): string[] {
   const sorted = sortRecords(records);
-  const matched = sorted.filter((record) => recordMatchesTarget(record, target));
+  const matched = sorted.filter((record) => recordMatchesTarget(record, target, identityCache));
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
   const firstMatched = matched[0];
@@ -1152,6 +1377,7 @@ function buildPersonLocalStats(records: ChatMessageRecord[], target: string, pre
     `分析对象：${target}；本人精确匹配发言：${matched.length} 条；上下文输入：${prepared.lines.length} 条`,
     `本人发言时间：${firstMatched ? formatDate(new Date(firstMatched.timestamp * 1000)) : "未找到"} 至 ${lastMatched ? formatDate(new Date(lastMatched.timestamp * 1000)) : "未找到"}`,
     `匹配身份：${identityText}`,
+    `身份缓存：已启用 senderId / 历史昵称 / 历史 username 辅助匹配`,
   ];
 }
 
@@ -1438,8 +1664,10 @@ function prepareCompareInput(
   currentLabel: string,
   previousLabel: string,
 ): PreparedInput {
-  const currentPrepared = prepareSummaryInput(currentRecords);
-  const previousPrepared = prepareSummaryInput(previousRecords);
+  const currentPrepared = currentRecords.length >= 520 ? prepareSegmentedSummaryInput(currentRecords) : prepareFlatSummaryInput(currentRecords);
+  const previousPrepared = previousRecords.length >= 520 ? prepareSegmentedSummaryInput(previousRecords) : prepareFlatSummaryInput(previousRecords);
+  const currentLines = compactLinesToBudget(currentPrepared.lines, 9000);
+  const previousLines = compactLinesToBudget(previousPrepared.lines, 9000);
   return {
     lines: [
       "对比本地统计：",
@@ -1450,12 +1678,12 @@ function prepareCompareInput(
       ...buildLocalSummaryStats(previousRecords, previousPrepared).slice(2),
       "",
       "当前时段聊天消息：",
-      ...currentPrepared.lines.slice(0, 110),
+      ...currentLines,
       "",
       "对照时段聊天消息：",
-      ...previousPrepared.lines.slice(0, 110),
+      ...previousLines,
     ],
-    note: `已对比当前 ${currentRecords.length} 条和对照 ${previousRecords.length} 条消息；两边都已按时间采样`,
+    note: `已对比当前 ${currentRecords.length} 条和对照 ${previousRecords.length} 条消息；两边分别独立采样/分段并各自限制输入预算`,
   };
 }
 
@@ -1501,30 +1729,37 @@ function prepareLinksInput(records: ChatMessageRecord[]): PreparedInput {
 }
 
 function prepareKeywordInput(records: ChatMessageRecord[], keyword: string): PreparedInput {
-  const normalizedKeyword = normalizeTargetText(keyword);
+  const query = parseKeywordQuery(keyword);
   const matchedIndexes = records
-    .map((record, index) => (normalizeTargetText(record.content).includes(normalizedKeyword) ? index : -1))
+    .map((record, index) => (recordMatchesKeywordQuery(record, query) ? index : -1))
     .filter((index) => index >= 0);
 
   if (!matchedIndexes.length) {
     const sampled = sampleRecords(records, 100);
     return {
-      lines: [`未直接找到关键词「${keyword}」。`, ...sampled.records.map((record) => recordToLine(record, { maxContentChars: 180 }))],
-      note: `未找到关键词「${keyword}」的直接匹配；仅提供全局采样上下文`,
+      lines: [
+        `未直接找到关键词「${keyword}」。`,
+        `关键词规则：${query.label}`,
+        ...sampled.records.map((record) => recordToLine(record, { maxContentChars: 180 })),
+      ],
+      note: `未找到关键词「${keyword}」的直接匹配；${query.label}；仅提供全局采样上下文`,
     };
   }
 
   const indexes = buildPersonContextIndexes(records.length, matchedIndexes, 180);
   const matchedIndexSet = new Set(matchedIndexes);
   return {
-    lines: indexes.map((index) =>
-      recordToLine(records[index], {
-        mark: matchedIndexSet.has(index),
-        includeIdentity: true,
-        maxContentChars: 220,
-      }),
-    ),
-    note: `关键词「${keyword}」匹配 ${matchedIndexes.length} 条，⭐ 标记直接命中的消息，并附带上下文`,
+    lines: [
+      `关键词规则：${query.label}`,
+      ...indexes.map((index) =>
+        recordToLine(records[index], {
+          mark: matchedIndexSet.has(index),
+          includeIdentity: true,
+          maxContentChars: 220,
+        }),
+      ),
+    ],
+    note: `关键词「${keyword}」匹配 ${matchedIndexes.length} 条；${query.label}；⭐ 标记直接命中的消息，并附带上下文`,
   };
 }
 
@@ -1595,7 +1830,7 @@ async function callGemini(config: SumConfig, messages: string): Promise<string> 
   return content.trim();
 }
 
-async function summarize(config: SumConfig, messages: string): Promise<string> {
+async function summarize(config: SumConfig, messages: string): Promise<SummaryResult> {
   const providers = [
     {
       name: config.name || "主线路",
@@ -1633,7 +1868,15 @@ async function summarize(config: SumConfig, messages: string): Promise<string> {
           content.slice(0, config.maxOutputLength) +
           "\n\n内容已截断：超过最大输出长度。";
       }
-      return content;
+      return {
+        content,
+        provider: {
+          name: provider.name || provider.baseUrl,
+          type: providerConfig.type,
+          baseUrl: provider.baseUrl,
+          model: provider.model,
+        },
+      };
     } catch (error: any) {
       const name = provider.name || provider.baseUrl;
       const message = error?.response?.data?.error?.message || error?.message || String(error);
@@ -1642,6 +1885,70 @@ async function summarize(config: SumConfig, messages: string): Promise<string> {
   }
 
   throw new Error(`所有接口都失败：${errors.join("；")}`);
+}
+
+function providerFooter(provider: ProviderUseInfo): string {
+  return `\n\n---\n🤖 本次使用：${provider.name}｜${provider.model}`;
+}
+
+function providerChainLines(config: SumConfig): string[] {
+  const providers = [
+    {
+      name: config.name || "主线路",
+      type: config.type,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+      stream: config.stream,
+    },
+    ...(config.fallbacks || []).map((provider) => ({
+      ...provider,
+      type: provider.type || config.type,
+    })),
+  ];
+
+  return providers.map((provider, index) =>
+    `${index + 1}. ${provider.name || provider.baseUrl}｜${provider.model}｜${provider.type}｜${provider.apiKey ? "已配置" : "未配置"}`,
+  );
+}
+
+function buildDebugText(params: {
+  config: SumConfig;
+  rangeLabel: string;
+  fetchResult: MessageFetchResult;
+  prepared: PreparedInput;
+  target?: string;
+  keyword?: string;
+  identityCache?: IdentityCache;
+}): string {
+  const sorted = sortRecords(params.fetchResult.records);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const matchedTarget = params.target
+    ? sorted.filter((record) => recordMatchesTarget(record, params.target || "", params.identityCache)).length
+    : null;
+  const matchedKeyword = params.keyword
+    ? sorted.filter((record) => recordMatchesKeywordQuery(record, parseKeywordQuery(params.keyword || ""))).length
+    : null;
+
+  return [
+    "🧪 Sum 调试统计",
+    "",
+    `范围：${params.rangeLabel}`,
+    `实际消息时间：${first ? formatDate(new Date(first.timestamp * 1000)) : "无"} 至 ${last ? formatDate(new Date(last.timestamp * 1000)) : "无"}`,
+    `读取：${params.fetchResult.fetchedPages} 页 / ${sorted.length} 条可读消息`,
+    `边界：${params.fetchResult.reachedTimeBoundary ? "已覆盖请求范围" : "未确认到底"}；上限：${params.fetchResult.reachedFetchLimit ? "已触发" : "未触发"}`,
+    `输入处理：${params.prepared.note}`,
+    `最终输入行数：${params.prepared.lines.length}；字符数：${params.prepared.lines.join("\n").length}`,
+    params.target ? `人物匹配：${params.target} => ${matchedTarget} 条` : "",
+    params.keyword ? `关键词匹配：${params.keyword} => ${matchedKeyword} 条` : "",
+    "",
+    "📊 本地统计",
+    ...buildLocalSummaryStats(sorted, params.prepared).slice(1),
+    "",
+    "🔌 供应商链路",
+    ...providerChainLines(params.config),
+  ].filter((line) => line !== "").join("\n");
 }
 
 async function handleCommand(msg: Api.Message): Promise<void> {
@@ -1748,6 +2055,8 @@ async function handleCommand(msg: Api.Message): Promise<void> {
         `API Key: ${db.data.apiKey ? "已设置" : "未设置"}`,
         `流式请求: ${db.data.stream ? "开启" : "关闭"}`,
         `备用线路: ${(db.data.fallbacks || []).length}`,
+        "供应商链路:",
+        ...providerChainLines(db.data).map((line) => htmlEscape(line)),
         `最大输出: ${db.data.maxOutputLength || "不限制"}`,
         `回复模式: ${db.data.replyMode ? "开启" : "关闭"}`,
       ];
@@ -1762,6 +2071,51 @@ async function handleCommand(msg: Api.Message): Promise<void> {
 
     if (sub === "menu" || sub === "modes" || sub === "玩法" || sub === "菜单") {
       await msg.edit({ text: menuText, parseMode: "html" });
+      return;
+    }
+
+    if (sub === "debug" || sub === "stat" || sub === "stats" || sub === "诊断") {
+      const debugArgs = [...args];
+      let debugKeyword = "";
+      let request: { rangeToken: string | undefined; target: string };
+      if (debugArgs[0] === "about" || debugArgs[0] === "topic" || debugArgs[0] === "关键词") {
+        const parsed = parseRangeAndRest(debugArgs.slice(1), "24h");
+        debugKeyword = parsed.rest.join(" ").trim();
+        request = { rangeToken: parsed.rangeToken, target: "" };
+      } else {
+        request = parseSummaryRequest(debugArgs[0], debugArgs.slice(1));
+      }
+      const range = resolveRangeToken(request.rangeToken);
+      const chatId = String(msg.chatId);
+      await msg.edit({ text: "⏳ 正在读取消息并生成调试统计..." });
+      const fetchResult = range.startTime && range.endTime
+        ? await getChatMessageRecordsByTimeRange(chatId, range.startTime, range.endTime)
+        : await getChatMessageRecords(chatId, range.count || 100);
+      const identityCache = await updateIdentityCache(fetchResult.records);
+      const prepared = request.target
+        ? preparePersonInput(fetchResult.records, request.target, identityCache)
+        : debugKeyword
+        ? prepareKeywordInput(fetchResult.records, debugKeyword)
+        : prepareSummaryInput(fetchResult.records);
+      const fetchNote = range.startTime && range.endTime
+        ? `${range.label}，已读取 ${fetchResult.fetchedPages} 页 / ${fetchResult.records.length} 条可读消息`
+        : `最近 ${fetchResult.records.length} 条可读消息`;
+      const text = buildDebugText({
+        config: db.data,
+        rangeLabel: fetchNote,
+        fetchResult,
+        prepared,
+        target: request.target,
+        keyword: debugKeyword,
+        identityCache,
+      });
+      const parts = withPartHeader(splitLongText(text));
+      await msg.edit({ text: parts[0] });
+      const client = await getGlobalClient();
+      if (!client) throw new Error("Telegram 客户端未初始化");
+      for (const part of parts.slice(1)) {
+        await client.sendMessage(chatId, { message: part });
+      }
       return;
     }
 
@@ -1797,6 +2151,10 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       await msg.edit({ text: "没有找到可总结的文本消息" });
       return;
     }
+    const identityCache = await updateIdentityCache([
+      ...fetchResult.records,
+      ...(comparePreviousResult?.records || []),
+    ]);
 
     const chatName = getChatDisplayName(msg, chatId);
     const density = getSummaryDensity(effectiveRange.durationMinutes, fetchResult.records.length);
@@ -1813,7 +2171,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       ? `${effectiveRange.label}，${fetchNote}`
       : `最近 ${fetchResult.records.length} 条可读消息`;
     const prepared = isPersonAnalysis
-      ? preparePersonInput(fetchResult.records, request.target)
+      ? preparePersonInput(fetchResult.records, request.target, identityCache)
       : isCompareMode && comparePreviousResult
       ? prepareCompareInput(fetchResult.records, comparePreviousResult.records, scope, previousScope)
       : special
@@ -1831,7 +2189,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
           `输入处理：${prepared.note}`,
           `生成时间：${formatDate(new Date())}`,
           "",
-          ...buildPersonLocalStats(fetchResult.records, request.target, prepared),
+          ...buildPersonLocalStats(fetchResult.records, request.target, prepared, identityCache),
           "",
           "聊天消息：",
           prepared.lines.join("\n"),
@@ -1868,12 +2226,13 @@ async function handleCommand(msg: Api.Message): Promise<void> {
         ? 900
         : Math.min(db.data.maxOutputLength || density.maxOutputLength, special ? 1800 : density.maxOutputLength),
     };
-    const rawResult = await summarize(summaryConfig, summaryInput);
+    const summaryResult = await summarize(summaryConfig, summaryInput);
+    const rawContent = `${summaryResult.content}${providerFooter(summaryResult.provider)}`;
     const result = isPersonAnalysis
-      ? formatMarkdownForTelegram(rawResult)
+      ? formatMarkdownForTelegram(rawContent)
       : special
-      ? formatMarkdownForTelegram(rawResult)
-      : formatSummaryForTelegram(rawResult, chatName);
+      ? formatMarkdownForTelegram(rawContent)
+      : formatSummaryForTelegram(rawContent, chatName);
 
     if (db.data.replyMode) {
       const client = await getGlobalClient();
@@ -1921,6 +2280,7 @@ const menuText = `▎Sum 摘要菜单
 <code>${mainPrefix}sum links 24h</code> - 链接和资源整理
 <code>${mainPrefix}sum todo 12h</code> - 待办和未解决问题
 <code>${mainPrefix}sum about AI 24h</code> - 只看某个关键词
+<code>${mainPrefix}sum about AI,Claude -Gemini 24h</code> - 多关键词 / 排除词
 <code>${mainPrefix}sum map 24h</code> - 人物关系网
 <code>${mainPrefix}sum story day</code> - 今日剧情线
 <code>${mainPrefix}sum compare day</code> - 今天 vs 昨天
@@ -1929,6 +2289,10 @@ const menuText = `▎Sum 摘要菜单
 <b>人物分析</b>
 <code>${mainPrefix}sum 6h @username</code>
 <code>${mainPrefix}sum user 200 张三</code>
+
+<b>排错诊断</b>
+<code>${mainPrefix}sum debug 24h</code> - 查看抓取量 / 采样 / 线路
+<code>${mainPrefix}sum debug 12h @username</code> - 查看人物匹配条数
 
 中文也能用：<code>热梗</code>、<code>吃瓜</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>。
 时间可以写：<code>30m</code>、<code>6h</code>、<code>24h</code>、<code>day</code>、<code>week</code>。`;
@@ -1949,8 +2313,9 @@ const helpText = `▎聊天摘要
 <code>${mainPrefix}sum map 24h</code> - 人物关系网
 <code>${mainPrefix}sum compare day</code> - 今天 vs 昨天
 <code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
+<code>${mainPrefix}sum debug 24h</code> - 只看抓取/采样/线路诊断，不调用模型
 
-长时间范围会自动分页抓取并按时间采样；人物分析会优先精确匹配 @用户名 / 用户ID / 昵称并附带上下文。
+长时间范围会自动分页抓取并按时间分段；人物分析会优先精确匹配 @用户名 / 用户ID / 昵称，并使用历史身份缓存辅助匹配。
 
 <b>配置命令：</b>
 <code>${mainPrefix}sum key &lt;API_KEY&gt;</code>
