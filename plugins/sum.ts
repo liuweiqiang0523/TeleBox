@@ -1807,7 +1807,7 @@ async function callOpenAI(config: SumConfig, messages: string): Promise<string> 
         { role: "user", content: compactSummaryInput(messages) },
       ],
       temperature: 0.2,
-      max_tokens: Math.max(256, Math.min(1800, config.maxOutputLength || 1200)),
+      max_tokens: Math.max(256, Math.min(3200, config.maxOutputLength || 1200)),
       stream: Boolean(config.stream),
     },
   );
@@ -1907,6 +1907,7 @@ function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
   const limitText = meta.fetchResult.reachedFetchLimit ? "｜已触发抓取上限" : "";
   const inputNote = meta.prepared.note
     .replace(/^原始\s+\d+\s+条[，,]\s*/, "")
+    .replace(/^分段\s+\d+\s+段/, "已做长消息整理")
     .replace(/；每段保留统计和代表性消息/g, "")
     .replace(/，并按预算压缩/g, "，已压缩");
   return [
@@ -2191,7 +2192,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
     const volumeMode = fetchResult.records.length < 30
       ? "短消息模式：内容少时不要硬凑栏目，每栏只写确有依据的内容。"
       : fetchResult.records.length >= 520
-      ? "长消息模式：先按分段理解主线，再输出全局结论。"
+      ? "长消息模式：先按时间理解主线，再输出全局结论。"
       : "标准模式：兼顾本地统计和代表性消息。";
     const fetchNote = effectiveRange.startTime && effectiveRange.endTime
       ? [
