@@ -108,7 +108,7 @@ type FooterMeta = {
 };
 
 const unifiedSummaryPrompt =
-  "你是 Telegram 群聊摘要助手。请把聊天记录提纯成中文 Markdown 摘要。\n\n【绝对要求】\n1. 无论摘要范围是 30 分钟、1 小时、6 小时还是更久，都必须使用同一个固定模板。\n2. 不得增删栏目，不得修改栏目标题，不得把短摘要改成其他标题。\n3. 禁止输出 JSON、代码块、解释性前言。\n4. 禁止照抄原文、逐条复述、流水账、凑数编造。\n5. 根据“摘要范围”和“消息数量”自动调整信息密度：时间越短，内容越短；时间越长，归纳层级越高。\n6. 没有明显内容的栏目，直接写“无明显亮点”“无明显金句”“无明确待办”，不要硬凑。\n7. 每条要点必须是一句话，尽量不超过 30 个中文字符。\n8. 禁止使用 **Markdown 加粗**；标题会自动加粗。\n9. 一级标题必须使用「# 📊 群聊消息摘要｜群名」，群名从输入里的「群名」字段获取；所有 Markdown 标题都会在发送时加粗。\n10. 多人重复同一观点时，合并为一个话题；同一用户连续多条短消息，应合并理解为一次表达。\n11. 无法确认的内容不要写成确定结论，使用“可能”“倾向于”“尚未明确”。\n12. 如果输入包含“本地统计”，基本信息、消息总量、活跃时段、核心用户和话唠榜必须以本地统计为准；采样消息只用于判断重点话题、亮点、金句和待办。\n13. 只能使用“聊天消息”里明确出现的信息；禁止补写未出现的新人入群、验证、管理员动作、系统事件或后续进展。\n14. 如果输入提示“短消息模式”，保留固定栏目，但每个栏目只写确有依据的 0-1 条；重点话题不足 3 个时不要硬凑。\n\n【内容筛选规则】\n优先保留：决定、结论、争议、问题、行动项、重要链接、明确情绪变化。\n降低权重：寒暄、表情包、重复附和、单纯玩笑、无上下文短句。\n\n【重点分析对象】\n如果输入中包含“重点分析对象”，仍使用固定模板。\n摘要应优先围绕该用户的发言、观点、问题、行动项和情绪变化。\n需要结合上下文说明别人如何回应该用户。\n如果该用户发言很少，明确说明“该用户发言较少”，不要编造。\n\n【固定输出模板】\n# 📊 群聊消息摘要｜群名\n\n## ⏰ 基本信息\n- 🕒 时间范围：根据消息时间概括\n- 💬 消息总量：约 N 条\n- 📈 活跃时段：HH:mm-HH:mm\n- 👥 核心用户：用户A、用户B、用户C\n\n## 🏆 话唠榜\n🥇 用户A：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥈 用户B：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥉 用户C：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n\n## 🔥 重点话题\n### 1️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### 2️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### 3️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n## ✨ 本期亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n\n## 💬 金句 / 名场面\n- 🗣️ 用户：「原话或近似原话」\n- 🗣️ 用户：「原话或近似原话」\n\n## ✅ 待办 / 需要关注\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n\n## 🧭 一句话总结\n一句话概括最重要信息。";
+  "你是 Telegram 群聊摘要助手。请把聊天记录提纯成中文 Markdown 摘要。\n\n【绝对要求】\n1. 无论摘要范围是 30 分钟、1 小时、6 小时还是更久，都必须使用同一个固定模板。\n2. 不得增删栏目，不得修改栏目标题，不得把短摘要改成其他标题。\n3. 禁止输出 JSON、代码块、解释性前言。\n4. 禁止照抄原文、逐条复述、流水账、凑数编造。\n5. 根据“摘要范围”和“消息数量”自动调整信息密度：时间越短，内容越短；时间越长，归纳层级越高。\n6. 没有明显内容的栏目，直接写“无明显亮点”“无明显金句”“无明确待办”，不要硬凑。\n7. 每条要点必须是一句话，尽量不超过 30 个中文字符。\n8. 禁止使用 **Markdown 加粗**；标题会自动加粗。\n9. 一级标题必须使用「# 📊 群聊消息摘要｜群名」，群名从输入里的「群名」字段获取；所有 Markdown 标题都会在发送时加粗。\n10. 多人重复同一观点时，合并为一个话题；同一用户连续多条短消息，应合并理解为一次表达。\n11. 无法确认的内容不要写成确定结论，使用“可能”“倾向于”“尚未明确”。\n12. 如果输入包含“本地统计”，基本信息、消息总量、活跃时段、核心用户和话唠榜必须以本地统计为准；采样消息只用于判断重点话题、亮点、金句和待办。\n13. 只能使用“聊天消息”里明确出现的信息；禁止补写未出现的新人入群、验证、管理员动作、系统事件或后续进展。\n14. 如果输入提示“短消息模式”，保留固定栏目，但每个栏目只写确有依据的 0-1 条；重点话题不足时不要硬凑。\n15. 重点话题数量必须参考输入里的“重点话题上限”：消息多时可以输出 4-6 个话题，消息少时减少；不要固定只写 3 个。\n\n【内容筛选规则】\n优先保留：决定、结论、争议、问题、行动项、重要链接、明确情绪变化。\n降低权重：寒暄、表情包、重复附和、单纯玩笑、无上下文短句。\n\n【重点分析对象】\n如果输入中包含“重点分析对象”，仍使用固定模板。\n摘要应优先围绕该用户的发言、观点、问题、行动项和情绪变化。\n需要结合上下文说明别人如何回应该用户。\n如果该用户发言很少，明确说明“该用户发言较少”，不要编造。\n\n【固定输出模板】\n# 📊 群聊消息摘要｜群名\n\n## ⏰ 基本信息\n- 🕒 时间范围：根据消息时间概括\n- 💬 消息总量：约 N 条\n- 📈 活跃时段：HH:mm-HH:mm\n- 👥 核心用户：用户A、用户B、用户C\n\n## 🏆 话唠榜\n🥇 用户A：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥈 用户B：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n🥉 用户C：约 N 条｜称号：根据发言内容生成简短、有趣、不冒犯的称号\n\n## 🔥 重点话题\n### 1️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### 2️⃣ 话题标题\n👤 主要参与：用户A、用户B\n- ✅ 关键结论：一句话\n- 🔍 细节/注意点：一句话\n\n### ... 按“重点话题上限”继续输出，最多不要超过上限\n\n## ✨ 本期亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n- ✨ 一句话概括亮点\n\n## 💬 金句 / 名场面\n- 🗣️ 用户：「原话或近似原话」\n- 🗣️ 用户：「原话或近似原话」\n\n## ✅ 待办 / 需要关注\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n- 🔲 事项：一句话\n\n## 🧭 一句话总结\n一句话概括最重要信息。";
 
 const personAnalysisPrompt =
   "你是 Telegram 群聊人物分析助手。请只分析指定对象在这段聊天里的表现，不要输出群聊摘要。\n\n【绝对要求】\n1. 只围绕“分析对象”本人，以及别人对他的直接回应来判断。\n2. 禁止输出「群聊消息摘要」「话唠榜」「重点话题」「本期亮点」「待办」等群摘要栏目。\n3. 禁止编造。发言少就明确写“样本较少，只能弱判断”。\n4. 输入中带 ⭐ 的消息才是分析对象本人；没有 ⭐ 时必须说明“未找到精确匹配发言”。\n5. 结论要短，整体控制在 220-420 中文字。\n6. 每一项都要基于聊天记录，不要泛泛夸人。\n7. 输出中文，不要代码块，不要解释前言。\n8. 禁止使用 **Markdown 加粗**；标题会自动加粗。\n9. 如果输入包含“人物分析本地统计”，样本数、本人发言条数、时间范围必须以本地统计为准；不要把“上下文输入条数”误写成本人发言总数。\n10. 标题里的时间范围优先使用请求范围；目标只在其中一段时间出现时，在“基本”里说明目标首尾发言时间。\n11. 代表发言只能引用输入中带 ⭐ 的本人消息；没有合适短句就写“无明显短句”。\n\n【固定输出模板】\n# 📋 @分析对象 人物分析｜时间范围\n\n🧾 样本：本人 N 条｜上下文 N 条｜匹配身份\n🕒 基本：活跃度、主要出现方式、互动对象\n🧠 风格：说话方式和情绪气质\n💡 关注：最常聊/最在意的内容\n🔄 特点：在群里的典型行为模式\n🗣️ 代表发言：\n- 用户：「原话」｜说明一句话\n- 用户：「原话」｜说明一句话\n🧭 总结：一句话判断这个人给人的整体感觉";
@@ -510,6 +510,10 @@ function resolveRangeToken(rangeToken: string | undefined): {
 }
 
 function getSummaryDensity(durationMinutes: number | null, count: number): SummaryDensity {
+  const largeTopicLimit = count >= 1000 ? 6 : count >= 500 ? 5 : count >= 250 ? 4 : 3;
+  const largeTargetLength = count >= 1000 ? "1000-1400 中文字" : count >= 500 ? "900-1200 中文字" : "700-1000 中文字";
+  const largeMaxOutputLength = count >= 1000 ? 2600 : count >= 500 ? 2200 : 1800;
+
   if (durationMinutes === null) {
     if (count <= 50) {
       return {
@@ -538,12 +542,12 @@ function getSummaryDensity(durationMinutes: number | null, count: number): Summa
     return {
       label: "标准",
       targetLength: "500-800 中文字",
-      topicLimit: 3,
+      topicLimit: count >= 250 ? 4 : 3,
       pointLimit: 2,
       highlightLimit: 3,
       quoteLimit: 2,
       todoLimit: 3,
-      maxOutputLength: 1600,
+      maxOutputLength: count >= 250 ? 1900 : 1600,
     };
   }
 
@@ -574,24 +578,24 @@ function getSummaryDensity(durationMinutes: number | null, count: number): Summa
   if (durationMinutes < 360) {
     return {
       label: "标准",
-      targetLength: "500-800 中文字",
-      topicLimit: 3,
+      targetLength: count >= 250 ? "700-1000 中文字" : "500-800 中文字",
+      topicLimit: count >= 250 ? 4 : 3,
       pointLimit: 2,
       highlightLimit: 3,
       quoteLimit: 2,
       todoLimit: 3,
-      maxOutputLength: 1600,
+      maxOutputLength: count >= 250 ? 1900 : 1600,
     };
   }
   return {
     label: "长时段归纳",
-    targetLength: "700-1000 中文字",
-    topicLimit: 3,
+    targetLength: largeTargetLength,
+    topicLimit: largeTopicLimit,
     pointLimit: 2,
-    highlightLimit: 3,
+    highlightLimit: count >= 500 ? 4 : 3,
     quoteLimit: 2,
-    todoLimit: 3,
-    maxOutputLength: 1800,
+    todoLimit: count >= 500 ? 4 : 3,
+    maxOutputLength: largeMaxOutputLength,
   };
 }
 
@@ -1151,7 +1155,7 @@ function prepareSegmentedSummaryInput(records: ChatMessageRecord[]): PreparedInp
   const compacted = compactLinesToBudget(lines, SUMMARY_MESSAGE_CHAR_BUDGET);
   return {
     lines: compacted,
-    note: `原始 ${records.length} 条，已按时间切成 ${segments.length} 段；每段保留统计和代表性消息${compacted.length < lines.length ? "，并按预算压缩" : ""}`,
+    note: `分段 ${segments.length} 段${compacted.length < lines.length ? "，已压缩" : ""}`,
   };
 }
 
@@ -1901,11 +1905,15 @@ function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
     ? `｜对照 ${meta.comparePreviousResult.records.length} 条`
     : "";
   const limitText = meta.fetchResult.reachedFetchLimit ? "｜已触发抓取上限" : "";
+  const inputNote = meta.prepared.note
+    .replace(/^原始\s+\d+\s+条[，,]\s*/, "")
+    .replace(/；每段保留统计和代表性消息/g, "")
+    .replace(/，并按预算压缩/g, "，已压缩");
   return [
     "",
     "---",
     `🤖 模型：${provider.name}｜${provider.model}`,
-    `📥 输入：${meta.fetchResult.records.length} 条${compareText}｜${meta.prepared.note}${limitText}`,
+    `📥 输入：${meta.fetchResult.records.length} 条${compareText}｜${inputNote}${limitText}`,
   ].join("\n");
 }
 
@@ -2251,8 +2259,10 @@ async function handleCommand(msg: Api.Message): Promise<void> {
         ? buildModePrompt(mode, chatName, special.keyword)
         : buildSystemPrompt(db.data.prompt),
       maxOutputLength: isPersonAnalysis
-        ? 900
-        : Math.min(db.data.maxOutputLength || density.maxOutputLength, special ? 1800 : density.maxOutputLength),
+        ? 1100
+        : special
+        ? Math.max(db.data.maxOutputLength || 0, 1800)
+        : Math.max(db.data.maxOutputLength || 0, density.maxOutputLength),
     };
     const summaryResult = await summarize(summaryConfig, summaryInput);
     const rawContent = `${summaryResult.content}${providerFooter(summaryResult.provider, {
