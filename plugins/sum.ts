@@ -145,6 +145,8 @@ const modePrompts: Record<Exclude<SumMode, "summary" | "person">, string> = {
     "你是 Telegram 群聊金句收藏助手。只挑选输入里真实出现的有代表性的短句、名场面和好笑发言。不要编造原话，不要为了凑数改写成金句。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 引号里的内容必须来自聊天原文或非常接近原文。\n4. 没有合适金句就写“无明显金句”。\n\n【输出模板】\n# 💬 金句收藏夹｜群名\n\n## 🏆 今日金句\n🥇 用户：「原话」｜为什么值得收\n🥈 用户：「原话」｜为什么值得收\n🥉 用户：「原话」｜为什么值得收\n\n## 🎬 名场面补充\n- 🗣️ 用户：「原话」｜背景一句话\n- 🗣️ 用户：「原话」｜背景一句话\n\n## 🧭 今日嘴替\n一句话概括这段时间最像群聊精神的一句话。",
   melon:
     "你是 Telegram 群聊吃瓜助手。轻松整理争议、反转、围观、调侃和有戏剧性的互动，但必须温和，不拱火，不做人身攻击。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只描述事情和观点，不给人贴恶意标签。\n4. 没有瓜就写“今天瓜不多，主要是正常聊天”。\n\n【输出模板】\n# 🍉 吃瓜速报｜群名\n\n## 👀 今日瓜点\n- 🍉 事件：谁说了什么｜为什么有人围观\n- 🍉 事件：谁说了什么｜为什么有人围观\n\n## 🔄 反转 / 分歧\n- 🔁 分歧：双方观点一句话\n- 🔁 反转：前后变化一句话\n\n## 🧯 别上头\n一句话给出降温版理解。\n\n## 🧭 一句话吃瓜\n一句话总结最值得看的地方。",
+  roast:
+    "你是 Telegram 群聊温和吐槽助手。请把这段聊天整理成轻松好笑的槽点日报，但必须基于输入证据，不做人身攻击，不羞辱具体成员。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 吐槽对象优先是群聊现象、话题走向、集体行为和名场面，不要给单个人贴恶意标签。\n4. 可以点名用户，但语气必须像熟人间轻松调侃；不要涉及外貌、身份、疾病、地域、性别、隐私等敏感攻击。\n5. 引号里的内容必须来自聊天原文或非常接近原文；没有就写“无明显原话”。\n6. 如果输入内容很少，就写“今天槽点不多”，不要硬编。\n\n【输出模板】\n# 😏 今日槽点日报｜群名\n\n## 🎯 今日主槽\n一句话吐槽这段时间最有代表性的群聊现象。\n\n## 🧂 槽点清单\n- 😅 槽点：发生了什么｜为什么好笑但不冒犯\n- 😅 槽点：发生了什么｜为什么好笑但不冒犯\n- 😅 槽点：发生了什么｜为什么好笑但不冒犯\n\n## 🎬 名场面\n- 🗣️ 用户：「原话或近似原话」｜槽点一句话\n- 🗣️ 用户：「原话或近似原话」｜槽点一句话\n\n## 🧯 温柔收尾\n一句话把吐槽收回来，别拱火。",
 };
 
 const defaultConfig: SumConfig = {
@@ -209,7 +211,8 @@ type SumMode =
   | "compare"
   | "track"
   | "quotes"
-  | "melon";
+  | "melon"
+  | "roast";
 
 type SpecialRequest = {
   mode: SumMode;
@@ -413,6 +416,10 @@ function parseSpecialRequest(sub: string | undefined, args: string[]): SpecialRe
     melon: { mode: "melon", title: "吃瓜速报", defaultRangeToken: "24h" },
     gua: { mode: "melon", title: "吃瓜速报", defaultRangeToken: "24h" },
     吃瓜: { mode: "melon", title: "吃瓜速报", defaultRangeToken: "24h" },
+    roast: { mode: "roast", title: "今日槽点日报", defaultRangeToken: "24h" },
+    tu: { mode: "roast", title: "今日槽点日报", defaultRangeToken: "24h" },
+    吐槽: { mode: "roast", title: "今日槽点日报", defaultRangeToken: "24h" },
+    槽点: { mode: "roast", title: "今日槽点日报", defaultRangeToken: "24h" },
   };
 
   if (mode === "about" || mode === "topic" || mode === "关键词") {
@@ -1746,6 +1753,25 @@ function prepareMemeInput(records: ChatMessageRecord[]): PreparedInput {
   };
 }
 
+function prepareRoastInput(records: ChatMessageRecord[]): PreparedInput {
+  const sampled = prepareSummaryInput(records);
+  return {
+    lines: [
+      "吐槽边界：只吐槽群聊现象、话题走向、集体行为和名场面；不要做人身攻击。",
+      "",
+      ...buildRankStats(records).slice(0, 10),
+      "",
+      ...buildMemeStats(records),
+      "",
+      ...buildQuoteCandidateLines(records).slice(0, 80),
+      "",
+      "代表性消息：",
+      ...sampled.lines.slice(0, 140),
+    ],
+    note: `已统计 ${records.length} 条消息的槽点候选、热词、金句和代表性上下文`,
+  };
+}
+
 function prepareRelationInput(records: ChatMessageRecord[]): PreparedInput {
   const sampled = prepareSummaryInput(records);
   return {
@@ -1892,6 +1918,7 @@ function prepareSpecialInput(mode: SumMode, records: ChatMessageRecord[], keywor
   if (mode === "links") return prepareLinksInput(records);
   if (mode === "about") return prepareKeywordInput(records, keyword || "");
   if (mode === "meme") return prepareMemeInput(records);
+  if (mode === "roast") return prepareRoastInput(records);
   if (mode === "relation") return prepareRelationInput(records);
   if (mode === "quotes") return prepareQuotesInput(records);
   return prepareSummaryInput(records);
@@ -2442,6 +2469,7 @@ const menuText = `▎Sum 摘要菜单
 <code>${mainPrefix}sum meme 24h</code> - 热梗榜 / 名场面
 <code>${mainPrefix}sum melon 24h</code> - 吃瓜速报
 <code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
+<code>${mainPrefix}sum roast 24h</code> - 温和吐槽 / 槽点日报
 
 <b>实用整理</b>
 <code>${mainPrefix}sum links 24h</code> - 链接和资源整理
@@ -2461,7 +2489,7 @@ const menuText = `▎Sum 摘要菜单
 <code>${mainPrefix}sum debug 24h</code> - 查看抓取量 / 采样 / 线路
 <code>${mainPrefix}sum debug 12h @username</code> - 查看人物匹配条数
 
-中文也能用：<code>热梗</code>、<code>吃瓜</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>。
+中文也能用：<code>热梗</code>、<code>吃瓜</code>、<code>吐槽</code>、<code>槽点</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>。
 时间可以写：<code>30m</code>、<code>6h</code>、<code>24h</code>、<code>day</code>、<code>week</code>。`;
 
 const helpText = `▎聊天摘要
@@ -2480,6 +2508,7 @@ const helpText = `▎聊天摘要
 <code>${mainPrefix}sum map 24h</code> - 人物关系网
 <code>${mainPrefix}sum compare day</code> - 今天 vs 昨天
 <code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
+<code>${mainPrefix}sum roast 24h</code> - 温和吐槽 / 槽点日报
 <code>${mainPrefix}sum debug 24h</code> - 只看抓取/采样/线路诊断，不调用模型
 
 长时间范围会自动分页抓取并按时间分段；人物分析会优先精确匹配 @用户名 / 用户ID / 昵称，并使用历史身份缓存辅助匹配。
