@@ -113,6 +113,12 @@ type SilentMentionLink = {
   href: string;
 };
 
+type TextMatch = {
+  start: number;
+  end: number;
+  link: SilentMentionLink;
+};
+
 type MarkdownLinkAnchor = {
   token: string;
   html: string;
@@ -302,34 +308,61 @@ function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLin
     if (!username) continue;
     const href = `tg://resolve?domain=${encodeURIComponent(username)}`;
     add(`@${username}`, `＠${username}`, href);
-    add(username, username, href);
-    add(record.sender, record.sender, href);
+    add(username, `＠${username}`, href);
+    add(record.sender, `＠${record.sender}`, href);
   }
 
   return links.sort((a, b) => b.text.length - a.text.length).slice(0, 120);
 }
 
+function mentionPattern(text: string): RegExp {
+  const escaped = escapeRegExp(text);
+  if (/^[A-Za-z0-9_@.-]+$/.test(text)) {
+    return new RegExp(`(?<![A-Za-z0-9_@.-])${escaped}(?![A-Za-z0-9_@.-])`, "g");
+  }
+  return new RegExp(escaped, "g");
+}
+
+function linkifyMentionText(text: string, mentionLinks: SilentMentionLink[]): string {
+  const matches: TextMatch[] = [];
+  for (const item of mentionLinks) {
+    const escapedText = htmlEscape(item.text);
+    if (!escapedText) continue;
+    for (const match of text.matchAll(mentionPattern(escapedText))) {
+      const start = match.index ?? -1;
+      if (start < 0) continue;
+      matches.push({ start, end: start + match[0].length, link: item });
+    }
+  }
+
+  if (!matches.length) return text;
+
+  matches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  const selected: TextMatch[] = [];
+  let cursor = 0;
+  for (const match of matches) {
+    if (match.start < cursor) continue;
+    selected.push(match);
+    cursor = match.end;
+  }
+
+  let result = "";
+  cursor = 0;
+  for (const match of selected) {
+    result += text.slice(cursor, match.start);
+    result += `<a href="${htmlEscape(match.link.href)}">${htmlEscape(match.link.display)}</a>`;
+    cursor = match.end;
+  }
+  return result + text.slice(cursor);
+}
+
 function linkifySilentMentions(html: string, mentionLinks: SilentMentionLink[]): string {
   if (!mentionLinks.length) return html;
   const tags = html.split(/(<[^>]+>)/g);
-  const linked = new Set<string>();
 
   return tags.map((part) => {
     if (!part || part.startsWith("<")) return part;
-    let text = part;
-    for (const item of mentionLinks) {
-      if (linked.has(item.href)) continue;
-      const escapedText = htmlEscape(item.text);
-      if (!escapedText || !text.includes(escapedText)) continue;
-      const escapedDisplay = htmlEscape(item.display);
-      const escapedHref = htmlEscape(item.href);
-      text = text.replace(
-        new RegExp(escapeRegExp(escapedText), "g"),
-        `<a href="${escapedHref}">${escapedDisplay}</a>`,
-      );
-      linked.add(item.href);
-    }
-    return text;
+    return linkifyMentionText(part, mentionLinks);
   }).join("");
 }
 
