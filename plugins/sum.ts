@@ -303,13 +303,36 @@ function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLin
     links.push({ text: raw, display, href });
   };
 
+  const addNameAliases = (record: ChatMessageRecord, href: string) => {
+    const first = record.firstName.trim();
+    const last = record.lastName.trim();
+    const sender = record.sender.trim();
+    const compactLast = last.replace(/^[（(]+|[）)]+$/g, "").trim();
+    const aliases = [
+      sender,
+      sender.replace(/\s+/g, ""),
+      first,
+      last,
+      compactLast,
+      first && last ? `${first} ${last}` : "",
+      first && last ? `${first}${last}` : "",
+      first && compactLast ? `${first}（${compactLast}）` : "",
+      first && compactLast ? `${first}(${compactLast})` : "",
+    ].filter(Boolean);
+
+    const display = sender || first || compactLast;
+    for (const alias of aliases) {
+      add(alias, `＠${display}`, href);
+    }
+  };
+
   for (const record of records) {
     const username = record.username.replace(/^@/, "").trim();
     if (!username) continue;
     const href = `tg://resolve?domain=${encodeURIComponent(username)}`;
     add(`@${username}`, `＠${username}`, href);
     add(username, `＠${username}`, href);
-    add(record.sender, `＠${record.sender}`, href);
+    addNameAliases(record, href);
   }
 
   return links.sort((a, b) => b.text.length - a.text.length).slice(0, 120);
@@ -2136,12 +2159,7 @@ async function summarize(config: SumConfig, messages: string): Promise<SummaryRe
           ? await callGemini(providerConfig, messages)
           : await callOpenAI(providerConfig, messages);
 
-      let content = stripThinking(result);
-      if (config.maxOutputLength > 0 && content.length > config.maxOutputLength) {
-        content =
-          content.slice(0, config.maxOutputLength) +
-          "\n\n内容已截断：超过最大输出长度。";
-      }
+      const content = stripThinking(result);
       return {
         content,
         provider: {
