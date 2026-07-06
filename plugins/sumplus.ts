@@ -113,6 +113,7 @@ type FooterMeta = {
   prepared: PreparedInput;
   comparePreviousResult?: MessageFetchResult | null;
   usage?: TokenUsage;
+  rangeLabel?: string;
 };
 
 type SilentMentionLink = {
@@ -178,7 +179,7 @@ const modePrompts: Record<Exclude<SumMode, "summary" | "person">, string> = {
   abstract:
     "你是 Telegram 群聊抽象指数分析助手。请根据跑题速度、怪话密度、热梗、名场面和话题跳跃，生成轻松好笑的抽象指数报告。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 允许少量 **Markdown 加粗**，只用于总分和关键标签。\n3. 抽象指数必须是 0-100 的整数，并基于输入现象给理由。\n4. 只吐槽群聊现象，不羞辱具体成员。\n5. 输出像小面板，短行优先；没有明显抽象内容就写“抽象度较低”。\n\n【输出模板】\n# 🌀 今日抽象指数｜群名\n\n## 📈 抽象指数\n**N/100｜抽象等级名**\n理由：一句话说明为什么是这个分数。\n\n## 🧠 抽象来源\n- 🌀 话题跳跃：一句话\n- 🧩 表达抽象：一句话\n- 🎬 名场面：用户「原话」\n\n## 🏷️ 今日标签\n- 标签一｜一句话\n- 标签二｜一句话\n\n## 🧭 一句话评价\n一句话像段子一样总结今天的抽象程度。",
   award:
-    "你是 Telegram 群聊颁奖典礼主持人。请基于本地统计和聊天内容，给这段群聊颁发轻松、有梗但不冒犯的奖项。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 允许少量 **Markdown 加粗**，只用于奖项名和获奖用户。\n3. 奖项必须基于输入证据，不能硬编。\n4. 奖名要好笑但不羞辱人，不使用负面人格标签。\n5. 同一个用户不要刷太多奖，除非输入里确实一人主导。\n6. 今日奖项 4-6 个；每个奖项固定 2 行，适合 Telegram 手机端。\n\n【输出模板】\n# 🏆 今日群聊颁奖典礼｜群名\n\n## 👑 今日大奖\n**全场 MVP：用户A**\n理由：一句话说明为什么\n\n## 🎖️ 今日奖项\n1️⃣ **最佳气氛组：用户B**\n🏅 理由：一句话\n\n2️⃣ **最佳补刀奖：用户C**\n🏅 理由：一句话\n\n3️⃣ **最佳资源投喂：用户D**\n🏅 理由：一句话\n\n## 🧭 颁奖词\n一句话收束今天的群聊风格。",
+    "你是 Telegram 群聊颁奖典礼主持人。请基于本地统计和聊天内容，给这段群聊颁发轻松、有梗但不冒犯的奖项。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 允许少量 **Markdown 加粗**，只用于奖项名和获奖用户。\n3. 奖项必须基于输入证据，不能硬编。\n4. 奖名要好笑但不羞辱人，不使用负面人格标签。\n5. 同一个用户不要刷太多奖，除非输入里确实一人主导。\n6. 使用“本期”而不是“今日”，因为请求范围可能是 6h、24h、day 或 week。\n7. 如果输入少于 30 条，奖项只输出 2-4 个；如果输入少于 10 条，允许只输出 MVP 和 1 个奖项。\n8. 不要把少量消息夸成全天表现；“N 条发言/短句”只能来自本地统计，不能凭印象编数字。\n9. 每个奖项固定 2 行，适合 Telegram 手机端。\n\n【输出模板】\n# 🏆 本期群聊颁奖典礼｜群名\n\n## 👑 本期大奖\n**全场 MVP：用户A**\n理由：一句话说明为什么\n\n## 🎖️ 本期奖项\n1️⃣ **最佳气氛组：用户B**\n🏅 理由：一句话\n\n2️⃣ **最佳补刀奖：用户C**\n🏅 理由：一句话\n\n3️⃣ **最佳资源投喂：用户D**\n🏅 理由：一句话\n\n## 🧭 颁奖词\n一句话收束这段群聊风格。",
   mood:
     "你是 Telegram 群聊情绪天气预报助手。请把这段聊天的整体气氛、热度、欢乐值和火药味整理成短平快的天气报告。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 允许少量 **Markdown 加粗**，只用于天气主结论和分数。\n3. 分数必须是 0-100 的整数，基于输入现象给简短理由。\n4. 只描述群聊气氛，不做用户人格判断。\n5. 输出要短，一眼能看懂；不要长段落。\n\n【输出模板】\n# 🌦️ 今日群聊天气｜群名\n\n## 🌤️ 天气\n**多云转抽象，局部有瓜**\n一句话说明整体气氛。\n\n## 🌡️ 温度面板\n- 🔥 热度：**N/100**｜理由一句话\n- 😄 欢乐值：**N/100**｜理由一句话\n- ⚔️ 火药味：**N/100**｜理由一句话\n- 🌀 跑题率：**N/100**｜理由一句话\n\n## 🧭 预报\n一句话预测后续群聊走势，必须基于当前话题伏笔。",
   npc:
@@ -2346,7 +2347,7 @@ function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
     "",
     "---",
     `🤖 模型：${provider.name}｜${provider.model}`,
-    `📥 输入：${meta.fetchResult.records.length} 条${compareText}｜${inputDetail}${limitText}`,
+    `📥 范围：${meta.rangeLabel || "当前请求"}｜输入：${meta.fetchResult.records.length} 条${compareText}｜${inputDetail}${limitText}`,
   ].join("\n");
 }
 
@@ -2712,6 +2713,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       prepared,
       comparePreviousResult,
       usage: summaryResult.usage,
+      rangeLabel: effectiveRange.label,
     })}`;
     const mentionLinks = buildSilentMentionLinks(fetchResult.records);
     const result = isPersonAnalysis
