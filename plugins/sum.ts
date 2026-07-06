@@ -344,10 +344,10 @@ function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLin
     const username = record.username.replace(/^@/, "").trim();
     if (!username) continue;
     const href = `tg://resolve?domain=${encodeURIComponent(username)}`;
-    const priority = senderCounts.get(record.senderId) || 0;
-    add(`@${username}`, `＠${username}`, href, priority + 1000);
-    add(username, `＠${username}`, href, priority + 900);
-    addNameAliases(record, href, priority);
+    const priority = (senderCounts.get(record.senderId) || 0) * 10;
+    add(`@${username}`, `＠${username}`, href, priority + 3);
+    add(username, `＠${username}`, href, priority + 2);
+    addNameAliases(record, href, priority + 1);
   }
 
   return [...links.values()]
