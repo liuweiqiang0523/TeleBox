@@ -10,6 +10,15 @@ import * as path from "path";
 import { modePrompts, personAnalysisPrompt, templatePolishPrompt, unifiedSummaryPrompt } from "./sumplus.prompts";
 import { providerChainLines, summarize, tokenUsageText, trimTrailingSlash } from "./sumplus.provider";
 import type { ProviderConfig, ProviderType, ProviderUseInfo, SumConfig, TokenUsage } from "./sumplus.provider";
+import type {
+  CachedIdentity,
+  ChatMessageRecord,
+  IdentityCache,
+  MessageFetchResult,
+  PreparedInput,
+  SumMode,
+  SummaryDensity,
+} from "./sumplus.types";
 const prefixes = getPrefixes();
 const mainPrefix = prefixes[0] || ".";
 
@@ -57,19 +66,6 @@ const identityCachePath = path.join(
   "identity-cache.json",
 );
 
-type CachedIdentity = {
-  senderId: string;
-  names: string[];
-  usernames: string[];
-  firstSeen: number;
-  lastSeen: number;
-  count: number;
-};
-
-type IdentityCache = {
-  users: Record<string, CachedIdentity>;
-};
-
 type FooterMeta = {
   fetchResult: MessageFetchResult;
   prepared: PreparedInput;
@@ -107,64 +103,6 @@ const defaultConfig: SumConfig = {
   replyMode: true,
   fallbacks: [],
 };
-
-type SummaryDensity = {
-  label: string;
-  targetLength: string;
-  topicLimit: number;
-  pointLimit: number;
-  highlightLimit: number;
-  quoteLimit: number;
-  todoLimit: number;
-  maxOutputLength: number;
-};
-
-type ChatMessageRecord = {
-  id: number;
-  timestamp: number;
-  sender: string;
-  senderId: string;
-  username: string;
-  firstName: string;
-  lastName: string;
-  content: string;
-};
-
-type MessageFetchResult = {
-  records: ChatMessageRecord[];
-  fetchedPages: number;
-  reachedFetchLimit: boolean;
-  reachedTimeBoundary: boolean;
-};
-
-type PreparedInput = {
-  lines: string[];
-  note: string;
-};
-
-type SumMode =
-  | "summary"
-  | "person"
-  | "hot"
-  | "rank"
-  | "links"
-  | "todo"
-  | "catchup"
-  | "vibe"
-  | "about"
-  | "meme"
-  | "relation"
-  | "story"
-  | "compare"
-  | "track"
-  | "quotes"
-  | "melon"
-  | "roast"
-  | "cp"
-  | "abstract"
-  | "award"
-  | "mood"
-  | "npc";
 
 type SpecialRequest = {
   mode: SumMode;
