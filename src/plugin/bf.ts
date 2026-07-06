@@ -457,7 +457,9 @@ async function createBackup(
     // 清理临时目录
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
-    } catch {}
+    } catch (cleanupErr) {
+      console.warn(`[bf] 临时目录清理失败: ${String(cleanupErr)}`);
+    }
   }
 }
 
@@ -886,7 +888,9 @@ class BfPlugin extends Plugin {
           for (const f of tempFiles) {
             fs.unlinkSync(path.join(os.tmpdir(), f));
           }
-        } catch {}
+        } catch (cleanupErr) {
+          console.warn(`[bf] 临时备份文件清理失败: ${String(cleanupErr)}`);
+        }
       }
     },
 
@@ -958,7 +962,9 @@ class BfPlugin extends Plugin {
         try {
           fs.unlinkSync(tempPath);
           fs.rmSync(extractPath, { recursive: true, force: true });
-        } catch {}
+        } catch (cleanupErr) {
+          console.warn(`[bf] 恢复后: ${String(cleanupErr)}`);
+        }
 
         // 尝试重载插件
         try {
