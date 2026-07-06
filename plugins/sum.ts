@@ -96,15 +96,23 @@ type ProviderUseInfo = {
   model: string;
 };
 
+type TokenUsage = {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+};
+
 type SummaryResult = {
   content: string;
   provider: ProviderUseInfo;
+  usage?: TokenUsage;
 };
 
 type FooterMeta = {
   fetchResult: MessageFetchResult;
   prepared: PreparedInput;
   comparePreviousResult?: MessageFetchResult | null;
+  usage?: TokenUsage;
 };
 
 type SilentMentionLink = {
@@ -166,7 +174,7 @@ const modePrompts: Record<Exclude<SumMode, "summary" | "person">, string> = {
   roast:
     "你是 Telegram 群聊温和吐槽助手。请把这段聊天整理成轻松好笑的槽点日报，但必须基于输入证据，不做人身攻击，不羞辱具体成员。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 吐槽对象优先是群聊现象、话题走向、集体行为和名场面，不要给单个人贴恶意标签。\n4. 可以点名用户，语气可以更犀利一点，像熟人群里互损；但刀口只能对准发言、操作、剧情反差和群体行为，不能攻击身份、外貌、地域、性别、疾病、隐私。\n5. 引号里的内容必须来自聊天原文或非常接近原文；没有就写“无明显原话”。\n6. 如果输入内容很少，就写“今天槽点不多”，不要硬编。\n7. 整体要短、准、好笑；消息多时槽点输出 4-6 个，名场面输出 3-5 个；消息少时自然减少。\n8. 不要写“槽点：”这种重复前缀；不要写“以上吐槽仅供娱乐”这类免责声明。\n9. 人名必须独立显示，使用“｜人物：用户A、用户B”或“用户：「原话」”格式；不要把人名和正文连在一起。\n10. 去重优先：同一事件不要同时占据主槽、槽点 TOP 和名场面；同一用户最多出现 2 次，除非他确实是全场唯一主线。\n11. 每个槽点先给 6-12 字标题，再给现场和吐槽；吐槽句可以犀利，但不超过 35 个中文字符。\n\n【输出模板】\n# 😏 今日槽点日报｜群名\n\n## 🎯 今日主槽\n- 🧂 主线：一句话概括最值得吐槽的群聊现象\n- 🎭 槽味：一句话点出为什么好笑，可以稍微狠一点\n\n## 🧂 槽点 TOP\n🥇 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n🥈 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n🥉 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n4️⃣ 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n5️⃣ 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n\n## 🎬 名场面\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n\n## 🧯 轻轻收住\n一句话收束，温和、不拱火、不免责声明。",
   cp:
-    "你是 Telegram 群聊互动嗑糖榜助手。请只分析群聊里的接话、互相回应、互相点名和默契配合；这是纯节目效果，不暗示现实关系。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只写群聊互动，不写暧昧、性暗示、现实关系推断。\n4. 语气轻松好笑但不冒犯，像熟人群里的节目效果。\n5. 必须写互动次数，优先使用“本地互动候选”里的“连续互动约 N 次”；如果是点名互动，写“点名约 N 次”。\n6. 最强互动写 1 组；其他组合通常写 6 组，消息很多且候选充足时最多 8 组；不要把候选列表全复制。\n7. 每组必须有 4-8 字称号，让效果更甜一点，例如“相声搭档”“技术连麦”“复读默契”“补刀拍档”“冲机拍档”。\n8. 最强互动可以稍微展开；其他组合每组 1-2 行，避免输出被 Telegram 分段。\n9. 名场面必须来自输入原文或非常接近原文；没有合适原话就省略“🎬 名场面”这一行。\n10. 没有明显互动组合就写“无明显组合”。\n\n【输出模板】\n# 🍬 今日互动嗑糖榜｜群名\n\n## 🥇 最强互动\n用户A ↔ 用户B｜称号：甜味称号\n- 🔁 互动：约 N 次｜一句话说明怎么互相接话\n- 🍯 糖点：一句话说明最有节目效果的点\n- 🎬 名场面：用户A：「短原话」→ 用户B：「短原话」\n- 💞 糖度：★★★★★\n\n## 🧃 其他组合\n- 用户C ↔ 用户D｜称号：短称号｜互动：约 N 次｜糖度：★★★★☆\n  糖点：一句话说明默契在哪里\n- 用户E ↔ 用户F｜称号：短称号｜互动：约 N 次｜糖度：★★★☆☆\n  糖点：一句话说明默契在哪里\n- 用户G ↔ 用户H｜称号：短称号｜互动：约 N 次｜糖度：★★★☆☆\n  糖点：一句话说明默契在哪里\n\n## 🍰 今日糖型\n- 相声互捧 / 技术连麦 / 复读默契 / 补刀接梗：选 2-3 个最贴切的类型，用一句话解释。\n\n## 🧭 今日结论\n一句话说明今天最有戏的一组，控制在 45 个中文字符内。",
+    "你是 Telegram 群聊互动嗑糖榜助手。请只分析群聊里的接话、互相回应、互相点名和默契配合；这是纯节目效果，不暗示现实关系。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只写群聊互动，不写暧昧、性暗示、现实关系推断。\n4. 语气轻松好笑但不冒犯，像熟人群里的节目效果。\n5. 必须写互动次数，优先使用“本地互动候选”里的“连续互动约 N 次”；如果是点名互动，写“点名约 N 次”。\n6. 最甜 CP 写 1 组；其他组合通常写 6 组，消息很多且候选充足时最多 8 组；不要把候选列表全复制。\n7. 每组必须有 4-8 字称号，让效果更甜一点，例如“相声搭档”“技术连麦”“复读默契”“补刀拍档”“冲机拍档”。\n8. 最甜 CP 使用多行排版，用户名、称号、互动、糖点、名场面、糖度都单独成行。\n9. 其他组合每组之间必须空一行；每组只写 1 条糖点，避免输出被 Telegram 分段。\n10. 名场面必须来自输入原文或非常接近原文；没有合适原话就省略“🎬 名场面”。\n11. 没有明显互动组合就写“无明显组合”。\n\n【输出模板】\n# 🍬 今日互动嗑糖榜｜群名\n\n## 🥇 最甜 CP\n用户A ↔ 用户B\n｜称号：甜味称号\n- 🔁 互动：连续互动约 N 次\n｜一句话说明怎么互相接话\n- 🍯 糖点：\n用户A负责什么，\n用户B负责什么，像什么场景。\n- 🎬 名场面：\n用户A：「短原话」\n用户B：「短原话」\n- 💞 糖度：★★★★★\n\n## 🧃 其他组合\n- 用户C ↔ 用户D｜称号：短称号｜互动：连续互动约 N 次｜糖度：★★★★☆\n  糖点：一句话说明默契在哪里。\n\n- 用户E ↔ 用户F｜称号：短称号｜互动：连续互动约 N 次｜糖度：★★★☆☆\n  糖点：一句话说明默契在哪里。\n\n- 用户G ↔ 用户H｜称号：短称号｜互动：连续互动约 N 次｜糖度：★★★☆☆\n  糖点：一句话说明默契在哪里。\n\n## 🍰 今日糖型\n- 技术连麦 / 冲机拍档 / 补刀接梗：选 2-3 个最贴切的类型，用一句话解释。\n\n## 🧭 今日结论\n一句话说明今天最有戏的一组，控制在 45 个中文字符内。",
   abstract:
     "你是 Telegram 群聊抽象指数分析助手。请根据跑题速度、怪话密度、热梗、名场面和话题跳跃，生成轻松好笑的抽象指数报告。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 抽象指数必须是 0-100 的整数，并基于输入现象给理由。\n4. 只吐槽群聊现象，不羞辱具体成员。\n5. 没有明显抽象内容就写“抽象度较低”。\n\n【输出模板】\n# 🌀 今日抽象指数｜群名\n\n## 📈 抽象指数\n今日抽象度：N/100\n一句话说明为什么是这个分数。\n\n## 🧠 抽象来源\n- 🌀 话题跳跃：一句话\n- 🧩 表达抽象：一句话\n- 🎬 名场面：用户：「原话或近似原话」\n\n## 🧭 一句话评价\n一句话像段子一样总结今天的抽象程度。",
   award:
@@ -2159,7 +2167,37 @@ function buildModePrompt(mode: SumMode, chatName: string, keyword?: string): str
   return `${prompt}${templatePolishPrompt}\n\n群名：${chatName}`;
 }
 
-async function callOpenAI(config: SumConfig, messages: string): Promise<string> {
+type ModelCallResult = {
+  content: string;
+  usage?: TokenUsage;
+};
+
+function numberFromUsage(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
+}
+
+function normalizeOpenAIUsage(usage: any): TokenUsage | undefined {
+  if (!usage || typeof usage !== "object") return undefined;
+  const promptTokens = numberFromUsage(usage.prompt_tokens ?? usage.promptTokens ?? usage.input_tokens ?? usage.inputTokens);
+  const completionTokens = numberFromUsage(
+    usage.completion_tokens ?? usage.completionTokens ?? usage.output_tokens ?? usage.outputTokens,
+  );
+  const totalTokens = numberFromUsage(usage.total_tokens ?? usage.totalTokens);
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) return undefined;
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+function normalizeGeminiUsage(usage: any): TokenUsage | undefined {
+  if (!usage || typeof usage !== "object") return undefined;
+  const promptTokens = numberFromUsage(usage.promptTokenCount);
+  const completionTokens = numberFromUsage(usage.candidatesTokenCount);
+  const totalTokens = numberFromUsage(usage.totalTokenCount);
+  if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) return undefined;
+  return { promptTokens, completionTokens, totalTokens };
+}
+
+async function callOpenAI(config: SumConfig, messages: string): Promise<ModelCallResult> {
   const data = await postJsonWithCurl(
     openAIChatCompletionsUrl(config.baseUrl),
     config.apiKey,
@@ -2179,10 +2217,13 @@ async function callOpenAI(config: SumConfig, messages: string): Promise<string> 
   if (!content || typeof content !== "string") {
     throw new Error("OpenAI 兼容接口返回空结果");
   }
-  return content.trim();
+  return {
+    content: content.trim(),
+    usage: normalizeOpenAIUsage(data?.usage),
+  };
 }
 
-async function callGemini(config: SumConfig, messages: string): Promise<string> {
+async function callGemini(config: SumConfig, messages: string): Promise<ModelCallResult> {
   const response = await axios.post(
     `${trimTrailingSlash(config.baseUrl)}/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`,
     {
@@ -2203,7 +2244,10 @@ async function callGemini(config: SumConfig, messages: string): Promise<string> 
   if (!content || typeof content !== "string") {
     throw new Error("Gemini 接口返回空结果");
   }
-  return content.trim();
+  return {
+    content: content.trim(),
+    usage: normalizeGeminiUsage(response.data?.usageMetadata),
+  };
 }
 
 async function summarize(config: SumConfig, messages: string): Promise<SummaryResult> {
@@ -2238,7 +2282,7 @@ async function summarize(config: SumConfig, messages: string): Promise<SummaryRe
           ? await callGemini(providerConfig, messages)
           : await callOpenAI(providerConfig, messages);
 
-      const content = stripThinking(result);
+      const content = stripThinking(result.content);
       return {
         content,
         provider: {
@@ -2247,6 +2291,7 @@ async function summarize(config: SumConfig, messages: string): Promise<SummaryRe
           baseUrl: provider.baseUrl,
           model: provider.model,
         },
+        usage: result.usage,
       };
     } catch (error: any) {
       const name = provider.name || provider.baseUrl;
@@ -2256,6 +2301,21 @@ async function summarize(config: SumConfig, messages: string): Promise<SummaryRe
   }
 
   throw new Error(`所有接口都失败：${errors.join("；")}`);
+}
+
+function formatTokenNumber(value: number | undefined): string {
+  return value === undefined ? "-" : value.toLocaleString("en-US");
+}
+
+function tokenUsageText(usage?: TokenUsage): string {
+  if (!usage) return "";
+  const totalTokens = usage.totalTokens ?? (
+    usage.promptTokens !== undefined && usage.completionTokens !== undefined
+      ? usage.promptTokens + usage.completionTokens
+      : undefined
+  );
+  if (usage.promptTokens === undefined && usage.completionTokens === undefined && totalTokens === undefined) return "";
+  return `Token：输入 ${formatTokenNumber(usage.promptTokens)} / 输出 ${formatTokenNumber(usage.completionTokens)} / 总计 ${formatTokenNumber(totalTokens)}`;
 }
 
 function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
@@ -2271,11 +2331,13 @@ function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
     .replace(/^已筛选\s+\d+\s+条消息中的/, "已筛选")
     .replace(/；每段保留统计和代表性消息/g, "")
     .replace(/，并按预算压缩/g, "，已压缩");
+  const tokenText = tokenUsageText(meta.usage);
+  const inputDetail = tokenText || inputNote;
   return [
     "",
     "---",
     `🤖 模型：${provider.name}｜${provider.model}`,
-    `📥 输入：${meta.fetchResult.records.length} 条${compareText}｜${inputNote}${limitText}`,
+    `📥 输入：${meta.fetchResult.records.length} 条${compareText}｜${inputDetail}${limitText}`,
   ].join("\n");
 }
 
@@ -2640,6 +2702,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       fetchResult,
       prepared,
       comparePreviousResult,
+      usage: summaryResult.usage,
     })}`;
     const mentionLinks = buildSilentMentionLinks(fetchResult.records);
     const result = isPersonAnalysis
