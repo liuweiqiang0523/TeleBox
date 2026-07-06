@@ -118,14 +118,14 @@ async function postJsonWithCurl(
     let stdout = "";
     let stderr = "";
 
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
+    child.stdout.on("data", (chunk: unknown) => {
+      stdout += String(chunk);
     });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+    child.stderr.on("data", (chunk: unknown) => {
+      stderr += String(chunk);
     });
     child.on("error", reject);
-    child.on("close", (code) => {
+    child.on("close", (code: number | null) => {
       const text = stdout.trim();
       if (text) {
         const streamContent = parseOpenAIStream(text);
