@@ -2128,7 +2128,16 @@ async function isMessageFiltered(
   if (!keywords || keywords.length === 0 || !message.text) return false;
 
   const text = message.text.toLowerCase();
-  return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+  const matchedKeyword = keywords.find((keyword) =>
+    text.includes(keyword.toLowerCase())
+  );
+  if (matchedKeyword) {
+    console.log(
+      `[SHIFT] 消息命中过滤词: ${matchedKeyword}, source=${sourceId}, msg=${message.id}`
+    );
+    return true;
+  }
+  return false;
 }
 
 // Get chat ID from message
