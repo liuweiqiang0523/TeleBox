@@ -165,6 +165,16 @@ const modePrompts: Record<Exclude<SumMode, "summary" | "person">, string> = {
     "你是 Telegram 群聊吃瓜助手。轻松整理争议、反转、围观、调侃和有戏剧性的互动，但必须温和，不拱火，不做人身攻击。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只描述事情和观点，不给人贴恶意标签。\n4. 没有瓜就写“今天瓜不多，主要是正常聊天”。\n\n【输出模板】\n# 🍉 吃瓜速报｜群名\n\n## 👀 今日瓜点\n- 🍉 事件：谁说了什么｜为什么有人围观\n- 🍉 事件：谁说了什么｜为什么有人围观\n\n## 🔄 反转 / 分歧\n- 🔁 分歧：双方观点一句话\n- 🔁 反转：前后变化一句话\n\n## 🧯 别上头\n一句话给出降温版理解。\n\n## 🧭 一句话吃瓜\n一句话总结最值得看的地方。",
   roast:
     "你是 Telegram 群聊温和吐槽助手。请把这段聊天整理成轻松好笑的槽点日报，但必须基于输入证据，不做人身攻击，不羞辱具体成员。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 吐槽对象优先是群聊现象、话题走向、集体行为和名场面，不要给单个人贴恶意标签。\n4. 可以点名用户，语气可以更犀利一点，像熟人群里互损；但刀口只能对准发言、操作、剧情反差和群体行为，不能攻击身份、外貌、地域、性别、疾病、隐私。\n5. 引号里的内容必须来自聊天原文或非常接近原文；没有就写“无明显原话”。\n6. 如果输入内容很少，就写“今天槽点不多”，不要硬编。\n7. 整体要短、准、好笑；消息多时槽点输出 4-6 个，名场面输出 3-5 个；消息少时自然减少。\n8. 不要写“槽点：”这种重复前缀；不要写“以上吐槽仅供娱乐”这类免责声明。\n9. 人名必须独立显示，使用“｜人物：用户A、用户B”或“用户：「原话」”格式；不要把人名和正文连在一起。\n10. 去重优先：同一事件不要同时占据主槽、槽点 TOP 和名场面；同一用户最多出现 2 次，除非他确实是全场唯一主线。\n11. 每个槽点先给 6-12 字标题，再给现场和吐槽；吐槽句可以犀利，但不超过 35 个中文字符。\n\n【输出模板】\n# 😏 今日槽点日报｜群名\n\n## 🎯 今日主槽\n- 🧂 主线：一句话概括最值得吐槽的群聊现象\n- 🎭 槽味：一句话点出为什么好笑，可以稍微狠一点\n\n## 🧂 槽点 TOP\n🥇 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n🥈 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n🥉 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n4️⃣ 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n5️⃣ 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n\n## 🎬 名场面\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n\n## 🧯 轻轻收住\n一句话收束，温和、不拱火、不免责声明。",
+  cp:
+    "你是 Telegram 群聊互动嗑糖榜助手。请只分析群聊里的接话、互相回应、互相点名和默契配合；这是纯节目效果，不暗示现实关系。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只写群聊互动，不写暧昧、性暗示、现实关系推断。\n4. 语气轻松好笑，但不能冒犯用户。\n5. 没有明显互动组合就写“无明显组合”。\n\n【输出模板】\n# 🍬 今日互动嗑糖榜｜群名\n\n## 🥇 最强互动\n用户A ↔ 用户B\n- 互动特点：一句话说明怎么互相接话\n- 糖点：一句话说明节目效果\n- 嗑糖指数：★★★☆☆\n\n## 🧃 其他组合\n- 用户C ↔ 用户D：互动类型一句话\n- 用户E ↔ 用户F：互动类型一句话\n- 用户G ↔ 用户H：互动类型一句话\n\n## 🧭 今日结论\n一句话说明今天最有戏的群聊互动。",
+  abstract:
+    "你是 Telegram 群聊抽象指数分析助手。请根据跑题速度、怪话密度、热梗、名场面和话题跳跃，生成轻松好笑的抽象指数报告。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 抽象指数必须是 0-100 的整数，并基于输入现象给理由。\n4. 只吐槽群聊现象，不羞辱具体成员。\n5. 没有明显抽象内容就写“抽象度较低”。\n\n【输出模板】\n# 🌀 今日抽象指数｜群名\n\n## 📈 抽象指数\n今日抽象度：N/100\n一句话说明为什么是这个分数。\n\n## 🧠 抽象来源\n- 🌀 话题跳跃：一句话\n- 🧩 表达抽象：一句话\n- 🎬 名场面：用户：「原话或近似原话」\n\n## 🧭 一句话评价\n一句话像段子一样总结今天的抽象程度。",
+  award:
+    "你是 Telegram 群聊颁奖典礼主持人。请基于本地统计和聊天内容，给这段群聊颁发轻松、有梗但不冒犯的奖项。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 奖项必须基于输入证据，不能硬编。\n4. 奖名要好笑但不羞辱人，不使用负面人格标签。\n5. 同一个用户不要刷太多奖，除非输入里确实一人主导。\n\n【输出模板】\n# 🏆 今日群聊颁奖典礼｜群名\n\n## 🎖️ 今日奖项\n- 最佳气氛组：用户｜获奖理由一句话\n- 最佳补刀奖：用户｜获奖理由一句话\n- 最佳资源投喂：用户｜获奖理由一句话\n- 最佳跑题大师：用户｜获奖理由一句话\n- 最佳认真解答：用户｜获奖理由一句话\n\n## 👑 今日大奖\n全场 MVP：用户｜一句话说明为什么\n\n## 🧭 颁奖词\n一句话收束今天的群聊风格。",
+  mood:
+    "你是 Telegram 群聊情绪天气预报助手。请把这段聊天的整体气氛、热度、欢乐值和火药味整理成短平快的天气报告。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 分数必须是 0-100 的整数，基于输入现象给简短理由。\n4. 只描述群聊气氛，不做用户人格判断。\n5. 输出要短，一眼能看懂。\n\n【输出模板】\n# 🌦️ 今日群聊天气｜群名\n\n## 🌤️ 天气\n一句话天气描述，例如“多云转抽象，局部有瓜”。\n\n## 🌡️ 温度\n- 热度：N/100｜理由一句话\n- 欢乐值：N/100｜理由一句话\n- 火药味：N/100｜理由一句话\n- 跑题概率：N/100｜理由一句话\n\n## 🧭 预报\n一句话预测后续群聊走势，必须基于当前话题伏笔。",
+  npc:
+    "你是 Telegram 群友 RPG 职业分配助手。请把这段聊天里活跃用户按群聊表现分配成 RPG 职业，纯娱乐，不做现实人格判断。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 职业要基于输入行为：发链接、解答、开团、补刀、劝架、总结、围观等。\n4. 职业名可以有梗，但不能侮辱或贬低用户。\n5. 没有足够依据就少写，不要硬凑。\n\n【输出模板】\n# 🧙 今日群友职业分配｜群名\n\n## 🧝 职业名单\n- 用户A：情报商人｜负责什么，一句话\n- 用户B：战士｜负责什么，一句话\n- 用户C：吟游诗人｜负责什么，一句话\n- 用户D：牧师｜负责什么，一句话\n- 用户E：刺客｜负责什么，一句话\n\n## 🎒 今日队伍配置\n一句话说明这支队伍今天怎么运转。\n\n## 🧭 副本结算\n一句话总结今天这局群聊打成什么样。",
 };
 
 const defaultConfig: SumConfig = {
@@ -230,7 +240,12 @@ type SumMode =
   | "track"
   | "quotes"
   | "melon"
-  | "roast";
+  | "roast"
+  | "cp"
+  | "abstract"
+  | "award"
+  | "mood"
+  | "npc";
 
 type SpecialRequest = {
   mode: SumMode;
@@ -581,6 +596,25 @@ function parseSpecialRequest(sub: string | undefined, args: string[]): SpecialRe
     tu: { mode: "roast", title: "今日槽点日报", defaultRangeToken: "24h" },
     吐槽: { mode: "roast", title: "今日槽点日报", defaultRangeToken: "24h" },
     槽点: { mode: "roast", title: "今日槽点日报", defaultRangeToken: "24h" },
+    cp: { mode: "cp", title: "互动嗑糖榜", defaultRangeToken: "24h" },
+    couple: { mode: "cp", title: "互动嗑糖榜", defaultRangeToken: "24h" },
+    pair: { mode: "cp", title: "互动嗑糖榜", defaultRangeToken: "24h" },
+    嗑糖: { mode: "cp", title: "互动嗑糖榜", defaultRangeToken: "24h" },
+    互动: { mode: "cp", title: "互动嗑糖榜", defaultRangeToken: "24h" },
+    abstract: { mode: "abstract", title: "抽象指数报告", defaultRangeToken: "24h" },
+    abs: { mode: "abstract", title: "抽象指数报告", defaultRangeToken: "24h" },
+    抽象: { mode: "abstract", title: "抽象指数报告", defaultRangeToken: "24h" },
+    award: { mode: "award", title: "群聊颁奖典礼", defaultRangeToken: "24h" },
+    awards: { mode: "award", title: "群聊颁奖典礼", defaultRangeToken: "24h" },
+    颁奖: { mode: "award", title: "群聊颁奖典礼", defaultRangeToken: "24h" },
+    奖项: { mode: "award", title: "群聊颁奖典礼", defaultRangeToken: "24h" },
+    mood: { mode: "mood", title: "群聊情绪天气", defaultRangeToken: "24h" },
+    weather: { mode: "mood", title: "群聊情绪天气", defaultRangeToken: "24h" },
+    情绪: { mode: "mood", title: "群聊情绪天气", defaultRangeToken: "24h" },
+    天气: { mode: "mood", title: "群聊情绪天气", defaultRangeToken: "24h" },
+    npc: { mode: "npc", title: "群友 RPG 职业分配", defaultRangeToken: "24h" },
+    rpg: { mode: "npc", title: "群友 RPG 职业分配", defaultRangeToken: "24h" },
+    职业: { mode: "npc", title: "群友 RPG 职业分配", defaultRangeToken: "24h" },
   };
 
   if (mode === "about" || mode === "topic" || mode === "关键词") {
@@ -2084,6 +2118,9 @@ function prepareSpecialInput(mode: SumMode, records: ChatMessageRecord[], keywor
   if (mode === "roast") return prepareRoastInput(records);
   if (mode === "relation") return prepareRelationInput(records);
   if (mode === "quotes") return prepareQuotesInput(records);
+  if (mode === "cp") return prepareRelationInput(records);
+  if (mode === "award" || mode === "npc") return prepareRankInput(records);
+  if (mode === "abstract" || mode === "mood") return prepareMemeInput(records);
   return prepareSummaryInput(records);
 }
 
@@ -2628,6 +2665,11 @@ const menuText = `▎Sum 摘要菜单
 <code>${mainPrefix}sum melon 24h</code> - 吃瓜速报
 <code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
 <code>${mainPrefix}sum roast 24h</code> - 温和吐槽 / 槽点日报
+<code>${mainPrefix}sum cp 24h</code> - CP / 互动嗑糖榜
+<code>${mainPrefix}sum abstract 24h</code> - 抽象指数报告
+<code>${mainPrefix}sum award 24h</code> - 群聊颁奖典礼
+<code>${mainPrefix}sum mood 24h</code> - 群聊情绪天气
+<code>${mainPrefix}sum npc 24h</code> - 群友 RPG 职业分配
 
 <b>实用整理</b>
 <code>${mainPrefix}sum links 24h</code> - 链接和资源整理
@@ -2647,7 +2689,7 @@ const menuText = `▎Sum 摘要菜单
 <code>${mainPrefix}sum debug 24h</code> - 查看抓取量 / 采样 / 线路
 <code>${mainPrefix}sum debug 12h @username</code> - 查看人物匹配条数
 
-中文也能用：<code>热梗</code>、<code>吃瓜</code>、<code>吐槽</code>、<code>槽点</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>。
+中文也能用：<code>热梗</code>、<code>吃瓜</code>、<code>吐槽</code>、<code>槽点</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>、<code>嗑糖</code>、<code>抽象</code>、<code>颁奖</code>、<code>情绪</code>、<code>职业</code>。
 时间可以写：<code>30m</code>、<code>6h</code>、<code>24h</code>、<code>day</code>、<code>week</code>。`;
 
 const helpText = `▎聊天摘要
@@ -2667,6 +2709,11 @@ const helpText = `▎聊天摘要
 <code>${mainPrefix}sum compare day</code> - 今天 vs 昨天
 <code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
 <code>${mainPrefix}sum roast 24h</code> - 温和吐槽 / 槽点日报
+<code>${mainPrefix}sum cp 24h</code> - CP / 互动嗑糖榜
+<code>${mainPrefix}sum abstract 24h</code> - 抽象指数报告
+<code>${mainPrefix}sum award 24h</code> - 群聊颁奖典礼
+<code>${mainPrefix}sum mood 24h</code> - 群聊情绪天气
+<code>${mainPrefix}sum npc 24h</code> - 群友 RPG 职业分配
 <code>${mainPrefix}sum debug 24h</code> - 只看抓取/采样/线路诊断，不调用模型
 
 长时间范围会自动分页抓取并按时间分段；人物分析会优先精确匹配 @用户名 / 用户ID / 昵称，并使用历史身份缓存辅助匹配。
