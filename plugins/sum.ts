@@ -166,7 +166,7 @@ const modePrompts: Record<Exclude<SumMode, "summary" | "person">, string> = {
   roast:
     "你是 Telegram 群聊温和吐槽助手。请把这段聊天整理成轻松好笑的槽点日报，但必须基于输入证据，不做人身攻击，不羞辱具体成员。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 吐槽对象优先是群聊现象、话题走向、集体行为和名场面，不要给单个人贴恶意标签。\n4. 可以点名用户，语气可以更犀利一点，像熟人群里互损；但刀口只能对准发言、操作、剧情反差和群体行为，不能攻击身份、外貌、地域、性别、疾病、隐私。\n5. 引号里的内容必须来自聊天原文或非常接近原文；没有就写“无明显原话”。\n6. 如果输入内容很少，就写“今天槽点不多”，不要硬编。\n7. 整体要短、准、好笑；消息多时槽点输出 4-6 个，名场面输出 3-5 个；消息少时自然减少。\n8. 不要写“槽点：”这种重复前缀；不要写“以上吐槽仅供娱乐”这类免责声明。\n9. 人名必须独立显示，使用“｜人物：用户A、用户B”或“用户：「原话」”格式；不要把人名和正文连在一起。\n10. 去重优先：同一事件不要同时占据主槽、槽点 TOP 和名场面；同一用户最多出现 2 次，除非他确实是全场唯一主线。\n11. 每个槽点先给 6-12 字标题，再给现场和吐槽；吐槽句可以犀利，但不超过 35 个中文字符。\n\n【输出模板】\n# 😏 今日槽点日报｜群名\n\n## 🎯 今日主槽\n- 🧂 主线：一句话概括最值得吐槽的群聊现象\n- 🎭 槽味：一句话点出为什么好笑，可以稍微狠一点\n\n## 🧂 槽点 TOP\n🥇 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n🥈 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n🥉 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n4️⃣ 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n5️⃣ 短标题｜人物：用户A、用户B\n   现场：一句话说明发生了什么\n   吐槽：一句话，不超过 35 个中文字符\n\n## 🎬 名场面\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n- 🗣️ 用户：「短原话」｜一句话说明笑点\n\n## 🧯 轻轻收住\n一句话收束，温和、不拱火、不免责声明。",
   cp:
-    "你是 Telegram 群聊互动嗑糖榜助手。请只分析群聊里的接话、互相回应、互相点名和默契配合；这是纯节目效果，不暗示现实关系。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只写群聊互动，不写暧昧、性暗示、现实关系推断。\n4. 语气轻松好笑，但不能冒犯用户。\n5. 没有明显互动组合就写“无明显组合”。\n\n【输出模板】\n# 🍬 今日互动嗑糖榜｜群名\n\n## 🥇 最强互动\n用户A ↔ 用户B\n- 互动特点：一句话说明怎么互相接话\n- 糖点：一句话说明节目效果\n- 嗑糖指数：★★★☆☆\n\n## 🧃 其他组合\n- 用户C ↔ 用户D：互动类型一句话\n- 用户E ↔ 用户F：互动类型一句话\n- 用户G ↔ 用户H：互动类型一句话\n\n## 🧭 今日结论\n一句话说明今天最有戏的群聊互动。",
+    "你是 Telegram 群聊互动嗑糖榜助手。请只分析群聊里的接话、互相回应、互相点名和默契配合；这是纯节目效果，不暗示现实关系。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 只写群聊互动，不写暧昧、性暗示、现实关系推断。\n4. 语气轻松好笑但不冒犯，像熟人群里的节目效果。\n5. 必须控制长度：最强互动 1 组，其他组合最多 5 组；不要把候选列表全写出来。\n6. 每组必须有 4-8 字称号，让效果更甜一点，例如“相声搭档”“技术连麦”“复读默契”“补刀拍档”。\n7. 每条说明最多 28 个中文字符；不要写长段落。\n8. 没有明显互动组合就写“无明显组合”。\n\n【输出模板】\n# 🍬 今日互动嗑糖榜｜群名\n\n## 🥇 最强互动\n用户A ↔ 用户B｜称号：甜味称号\n- 🍯 互动：一句话说明怎么互相接话\n- ✨ 糖点：一句话说明最有节目效果的点\n- 💞 糖度：★★★★★\n\n## 🧃 其他组合\n- 用户C ↔ 用户D｜称号：短称号｜糖度：★★★★☆｜一句话说明\n- 用户E ↔ 用户F｜称号：短称号｜糖度：★★★☆☆｜一句话说明\n- 用户G ↔ 用户H｜称号：短称号｜糖度：★★★☆☆｜一句话说明\n- 用户I ↔ 用户J｜称号：短称号｜糖度：★★☆☆☆｜一句话说明\n- 用户K ↔ 用户L｜称号：短称号｜糖度：★★☆☆☆｜一句话说明\n\n## 🧭 今日结论\n一句话说明今天最有戏的一组，控制在 35 个中文字符内。",
   abstract:
     "你是 Telegram 群聊抽象指数分析助手。请根据跑题速度、怪话密度、热梗、名场面和话题跳跃，生成轻松好笑的抽象指数报告。\n\n【版式要求】\n1. 固定使用下面模板，不要增删一级栏目。\n2. 禁止使用 **Markdown 加粗**，标题会自动加粗。\n3. 抽象指数必须是 0-100 的整数，并基于输入现象给理由。\n4. 只吐槽群聊现象，不羞辱具体成员。\n5. 没有明显抽象内容就写“抽象度较低”。\n\n【输出模板】\n# 🌀 今日抽象指数｜群名\n\n## 📈 抽象指数\n今日抽象度：N/100\n一句话说明为什么是这个分数。\n\n## 🧠 抽象来源\n- 🌀 话题跳跃：一句话\n- 🧩 表达抽象：一句话\n- 🎬 名场面：用户：「原话或近似原话」\n\n## 🧭 一句话评价\n一句话像段子一样总结今天的抽象程度。",
   award:
@@ -1867,7 +1867,7 @@ function buildMemeStats(records: ChatMessageRecord[]): string[] {
   ];
 }
 
-function buildRelationStats(records: ChatMessageRecord[]): string[] {
+function buildRelationStats(records: ChatMessageRecord[], pairLimit = 10, mentionLimit = 8): string[] {
   const pairStats = new Map<string, { a: string; b: string; count: number }>();
   const mentions = new Map<string, { from: string; to: string; count: number }>();
   const usernameToSender = new Map<string, string>();
@@ -1900,11 +1900,11 @@ function buildRelationStats(records: ChatMessageRecord[]): string[] {
 
   const topPairs = [...pairStats.values()]
     .sort((a, b) => b.count - a.count)
-    .slice(0, 10)
+    .slice(0, pairLimit)
     .map((item) => `${item.a} ↔ ${item.b}：连续互动约 ${item.count} 次`);
   const topMentions = [...mentions.values()]
     .sort((a, b) => b.count - a.count)
-    .slice(0, 8)
+    .slice(0, mentionLimit)
     .map((item) => `${item.from} → ${item.to}：点名 ${item.count} 次`);
 
   return [
@@ -1913,6 +1913,24 @@ function buildRelationStats(records: ChatMessageRecord[]): string[] {
     "本地点名候选：",
     ...(topMentions.length ? topMentions : ["无明显 @ 点名"]),
   ];
+}
+
+function prepareCpInput(records: ChatMessageRecord[]): PreparedInput {
+  const sampled = prepareSummaryInput(records);
+  return {
+    lines: [
+      "CP 模式边界：只分析群聊互动和节目效果，不暗示现实关系。",
+      "输出控制：最强互动 1 组；其他组合最多 5 组；每组必须有称号和糖度；不要照抄全部候选。",
+      "",
+      ...buildRelationStats(records, 6, 4),
+      "",
+      ...buildQuoteCandidateLines(records).slice(0, 40),
+      "",
+      "代表性消息：",
+      ...sampled.lines.slice(0, 100),
+    ],
+    note: `已整理 ${records.length} 条消息的互动候选；CP 模式限制为 1 组主榜 + 最多 5 组副榜`,
+  };
 }
 
 function buildQuoteCandidateLines(records: ChatMessageRecord[]): string[] {
@@ -2118,7 +2136,7 @@ function prepareSpecialInput(mode: SumMode, records: ChatMessageRecord[], keywor
   if (mode === "roast") return prepareRoastInput(records);
   if (mode === "relation") return prepareRelationInput(records);
   if (mode === "quotes") return prepareQuotesInput(records);
-  if (mode === "cp") return prepareRelationInput(records);
+  if (mode === "cp") return prepareCpInput(records);
   if (mode === "award" || mode === "npc") return prepareRankInput(records);
   if (mode === "abstract" || mode === "mood") return prepareMemeInput(records);
   return prepareSummaryInput(records);
