@@ -2342,12 +2342,16 @@ function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
     .replace(/；每段保留统计和代表性消息/g, "")
     .replace(/，并按预算压缩/g, "，已压缩");
   const tokenText = tokenUsageText(meta.usage);
-  const inputDetail = tokenText || inputNote;
+  const inputLine = `📥 消息：${meta.fetchResult.records.length} 条${compareText}${limitText}`;
+  const detailLine = tokenText
+    ? `🧮 ${tokenText}`
+    : `🧩 输入：${inputNote}`;
   return [
     "",
     "---",
     `🤖 模型：${provider.name}｜${provider.model}`,
-    `📥 输入：${meta.fetchResult.records.length} 条${compareText}｜${inputDetail}${limitText}`,
+    inputLine,
+    detailLine,
   ].join("\n");
 }
 
