@@ -111,6 +111,7 @@ type SilentMentionLink = {
   text: string;
   display: string;
   href: string;
+  priority?: number;
 };
 
 type TextMatch = {
@@ -289,21 +290,34 @@ function formatSummaryForTelegram(text: string, chatName: string, mentionLinks: 
 }
 
 function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLink[] {
-  const seen = new Set<string>();
-  const links: SilentMentionLink[] = [];
+  const links = new Map<string, SilentMentionLink>();
+  const senderCounts = new Map<string, number>();
 
-  const add = (text: string, display: string, href: string) => {
-    const raw = String(text || "").trim();
-    if (!raw) return;
-    const normalized = raw.replace(/^@/, "").toLowerCase();
-    if (normalized.length < 2) return;
-    const key = `${raw.toLowerCase()}|${href}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    links.push({ text: raw, display, href });
+  for (const record of records) {
+    senderCounts.set(record.senderId, (senderCounts.get(record.senderId) || 0) + 1);
+  }
+
+  const mentionDisplay = (value: string) => {
+    const clean = String(value || "")
+      .replace(/^[@＠]+/, "")
+      .replace(/\s+([（(])/g, "$1")
+      .replace(/([）)])\s+/g, "$1")
+      .trim();
+    return clean ? `＠${clean}` : "";
   };
 
-  const addNameAliases = (record: ChatMessageRecord, href: string) => {
+  const add = (text: string, display: string, href: string, priority = 0) => {
+    const raw = String(text || "").trim();
+    if (!raw) return;
+    const normalized = raw.replace(/^[@＠]+/, "").toLowerCase();
+    if (normalized.length < 2) return;
+    const key = `${raw.toLowerCase()}|${href}`;
+    const current = links.get(key);
+    if (current && (current.priority || 0) >= priority) return;
+    links.set(key, { text: raw, display, href, priority });
+  };
+
+  const addNameAliases = (record: ChatMessageRecord, href: string, priority: number) => {
     const first = record.firstName.trim();
     const last = record.lastName.trim();
     const sender = record.sender.trim();
@@ -320,9 +334,9 @@ function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLin
       first && compactLast ? `${first}(${compactLast})` : "",
     ].filter(Boolean);
 
-    const display = sender || first || compactLast;
     for (const alias of aliases) {
-      add(alias, `＠${display}`, href);
+      const display = mentionDisplay(alias);
+      if (display) add(alias, display, href, priority);
     }
   };
 
@@ -330,12 +344,15 @@ function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLin
     const username = record.username.replace(/^@/, "").trim();
     if (!username) continue;
     const href = `tg://resolve?domain=${encodeURIComponent(username)}`;
-    add(`@${username}`, `＠${username}`, href);
-    add(username, `＠${username}`, href);
-    addNameAliases(record, href);
+    const priority = senderCounts.get(record.senderId) || 0;
+    add(`@${username}`, `＠${username}`, href, priority + 1000);
+    add(username, `＠${username}`, href, priority + 900);
+    addNameAliases(record, href, priority);
   }
 
-  return links.sort((a, b) => b.text.length - a.text.length).slice(0, 120);
+  return [...links.values()]
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0) || b.text.length - a.text.length)
+    .slice(0, 600);
 }
 
 function mentionPattern(text: string): RegExp {
