@@ -2333,6 +2333,7 @@ function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
     ? `｜对照 ${meta.comparePreviousResult.records.length} 条`
     : "";
   const limitText = meta.fetchResult.reachedFetchLimit ? "｜已触发抓取上限" : "";
+  const rangeText = meta.rangeLabel ? `｜范围：${meta.rangeLabel}` : "";
   const inputNote = meta.prepared.note
     .replace(/^完整输入\s+\d+\s+条可读消息$/, "完整输入")
     .replace(/^原始\s+\d+\s+条[，,]\s*/, "")
@@ -2347,7 +2348,7 @@ function providerFooter(provider: ProviderUseInfo, meta: FooterMeta): string {
     "",
     "---",
     `🤖 模型：${provider.name}｜${provider.model}`,
-    `📥 范围：${meta.rangeLabel || "当前请求"}｜输入：${meta.fetchResult.records.length} 条${compareText}｜${inputDetail}${limitText}`,
+    `📥 输入：${meta.fetchResult.records.length} 条${compareText}｜${inputDetail}${limitText}${rangeText}`,
   ].join("\n");
 }
 
