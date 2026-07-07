@@ -197,6 +197,83 @@ function normalizeSummaryMentions(text: string): string {
     .join("\n");
 }
 
+
+function titleForSummaryMode(mode: SumMode, chatName: string, specialTitle?: string): string {
+  if (mode === "summary") {
+    if (specialTitle === "群聊日报") return `📆 群聊日报｜${chatName}`;
+    if (specialTitle === "昨日群聊日报") return `📜 昨日群聊日报｜${chatName}`;
+    if (specialTitle === "群聊周报") return `🗓️ 群聊周报｜${chatName}`;
+    return `📊 群聊消息摘要｜${chatName}`;
+  }
+  const titles: Partial<Record<SumMode, string>> = {
+    hot: "🔥 群聊争议雷达", rank: "🏆 今日话唠榜", links: "🔗 链接资源整理", todo: "✅ 群聊待办清单",
+    catchup: "🧭 错过消息补课", vibe: "🎭 群聊小剧场", about: "🔎 关键词追踪", meme: "🧨 今日热梗榜",
+    relation: "🕸️ 人物关系网", story: "🎬 群聊剧情线", compare: "📈 昨日今日对比", track: "🛰️ 争议追踪",
+    quotes: "💬 金句收藏夹", melon: "🍉 今日吃瓜速报", roast: "😏 今日槽点日报", cp: "🍬 今日互动嗑糖榜",
+    abstract: "🌀 今日抽象指数", award: "🏆 群聊颁奖典礼", mood: "🌦️ 今日群聊天气", npc: "🧙 群友职业分配",
+  };
+  return `${titles[mode] || "📊 群聊消息摘要"}｜${chatName}`;
+}
+
+function replaceSummaryTitle(text: string, title: string): string {
+  const lines = text.trim().split(/\r?\n/);
+  const index = lines.findIndex((line) => line.trim() !== "");
+  if (index < 0) return title;
+  lines[index] = `# ${title}`;
+  return lines.join("\n");
+}
+
+function bar(score: number): string {
+  const value = Math.max(0, Math.min(100, Math.round(score)));
+  const filled = Math.max(0, Math.min(10, Math.round(value / 10)));
+  return `${"█".repeat(filled)}${"░".repeat(10 - filled)} ${value}/100`;
+}
+
+function buildChatWeatherPanel(records: ChatMessageRecord[]): string {
+  const count = records.length;
+  const users = new Set(records.map((record) => record.senderId || record.sender).filter(Boolean)).size;
+  const text = records.map((record) => record.text || "").join("\n");
+  const emojiCount = [...text].filter((char) => /[\u{1F300}-\u{1FAFF}]/u.test(char)).length;
+  const questionCount = (text.match(/[?？]/g) || []).length;
+  const disputeCount = (text.match(/争议|不对|不是|问题|错误|失败|修复|卡|崩|吵|骂|坑/g) || []).length;
+  const melonCount = (text.match(/瓜|笑|哈哈|草|离谱|抽象|绷|乐|名场面/g) || []).length;
+  const heat = Math.min(100, 25 + count * 0.55 + users * 4);
+  const fun = Math.min(100, 20 + emojiCount * 3 + melonCount * 8 + users * 2);
+  const dispute = Math.min(100, 10 + disputeCount * 10 + questionCount * 2);
+  const melon = Math.min(100, 15 + melonCount * 12 + emojiCount * 2);
+  const weather = heat >= 80 ? "热闹高能" : dispute >= 65 ? "局部有争议" : melon >= 65 ? "多云转吃瓜" : fun >= 60 ? "轻松有梗" : "平稳交流";
+  return [
+    "🌦 群聊天气",
+    `• 🌤 天气：${weather}`,
+    `• 🔥 热度：${bar(heat)}`,
+    `• 😄 欢乐值：${bar(fun)}`,
+    `• ⚔️ 争议指数：${bar(dispute)}`,
+    `• 🍉 吃瓜浓度：${bar(melon)}`,
+  ].join("\n");
+}
+
+function insertWeatherPanel(text: string, panel: string): string {
+  if (text.includes("🌦 群聊天气")) return text;
+  const lines = text.split(/\r?\n/);
+  const insertAt = lines.findIndex((line) => /^\s*#*\s*🏆\s*话唠榜/.test(line.trim()));
+  if (insertAt > 0) {
+    return `${lines.slice(0, insertAt).join("\n").trimEnd()}\n\n${panel}\n\n${lines.slice(insertAt).join("\n").trimStart()}`;
+  }
+  return `${text.trimEnd()}\n\n${panel}`;
+}
+
+function decorateSummaryOutput(text: string, params: {
+  mode: SumMode;
+  chatName: string;
+  records: ChatMessageRecord[];
+  specialTitle?: string;
+  includeWeather: boolean;
+}): string {
+  let result = replaceSummaryTitle(text, titleForSummaryMode(params.mode, params.chatName, params.specialTitle));
+  if (params.includeWeather) result = insertWeatherPanel(result, buildChatWeatherPanel(params.records));
+  return result;
+}
+
 function formatSummaryForTelegram(text: string, chatName: string, mentionLinks: SilentMentionLink[] = []): string {
   const withTitle = ensureHeadingHasChatName(text, chatName);
   return formatBlockquoteForTelegram(withTitle, mentionLinks);
@@ -377,7 +454,7 @@ function isSummaryHeadingLine(line: string, index: number): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
   if (index === 0) return true;
-  if (/^[⏰🏆🔥✨💬✅🧭📊]\s/.test(trimmed)) return true;
+  if (/^[⏰🏆🔥✨💬✅🧭📊🌦]\s/.test(trimmed)) return true;
   if (/^\d+[️⃣.]\s*/u.test(trimmed)) return true;
   return false;
 }
@@ -1476,9 +1553,14 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       rangeLabel: effectiveRange.label,
     })}`;
     const mentionLinks = buildSilentMentionLinks(fetchResult.records);
-    const result = mode === "summary"
-      ? formatSummaryForTelegram(rawContent, chatName, mentionLinks)
-      : formatCardForTelegram(rawContent, mentionLinks);
+    const decoratedContent = decorateSummaryOutput(rawContent, {
+      mode,
+      chatName,
+      records: fetchResult.records,
+      specialTitle: special?.title,
+      includeWeather: mode === "summary",
+    });
+    const result = formatCardForTelegram(decoratedContent, mentionLinks);
     const quoteResult = true;
 
     if (db.data.replyMode) {
@@ -1504,51 +1586,48 @@ async function handleCommand(msg: Api.Message): Promise<void> {
   }
 }
 
-const menuText = `▎SumPlus 摘要菜单
+const menuText = `📚 <b>SumPlus 模式菜单</b>
 
-不用记命令，记住 <code>${mainPrefix}sum menu</code> 就行。
+🧭 <b>日常速览</b>
+<code>${mainPrefix}sum</code> / <code>${mainPrefix}sum 1h</code> - 普通摘要
+<code>${mainPrefix}sum day</code> - 📆 群聊日报
+<code>${mainPrefix}sum yesterday</code> - 📜 昨日群聊日报
+<code>${mainPrefix}sum week</code> - 🗓️ 群聊周报
+<code>${mainPrefix}sum catchup 8h</code> - 🧭 错过消息补课
 
-<b>日常补课</b>
-<code>${mainPrefix}sum</code> - 最近 100 条普通摘要
-<code>${mainPrefix}sum catchup 8h</code> - 像朋友一样补课
-<code>${mainPrefix}sum day</code> - 今天日报
-<code>${mainPrefix}sum yesterday</code> - 昨天日报
-<code>${mainPrefix}sum week</code> - 本周周报
+🍉 <b>好玩模式</b>
+<code>${mainPrefix}sum melon 24h</code> - 🍉 吃瓜速报
+<code>${mainPrefix}sum hot 6h</code> - 🔥 争议雷达
+<code>${mainPrefix}sum roast 24h</code> - 😏 今日槽点
+<code>${mainPrefix}sum vibe 12h</code> - 🎭 群聊小剧场
+<code>${mainPrefix}sum meme 24h</code> - 🧨 热梗榜
+<code>${mainPrefix}sum cp 24h</code> - 🍬 互动嗑糖榜
+<code>${mainPrefix}sum abstract 24h</code> - 🌀 抽象指数
+<code>${mainPrefix}sum award 24h</code> - 🏆 群聊颁奖
+<code>${mainPrefix}sum mood 24h</code> - 🌦️ 群聊天气
+<code>${mainPrefix}sum npc 24h</code> - 🧙 群友职业
 
-<b>好玩模式</b>
-<code>${mainPrefix}sum hot 6h</code> - 争议 / 吵架雷达
-<code>${mainPrefix}sum rank 24h</code> - 贡献榜 / 话唠榜
-<code>${mainPrefix}sum vibe 12h</code> - 群聊气氛小剧场
-<code>${mainPrefix}sum meme 24h</code> - 热梗榜 / 名场面
-<code>${mainPrefix}sum melon 24h</code> - 吃瓜速报
-<code>${mainPrefix}sum quotes 24h</code> - 金句收藏夹
-<code>${mainPrefix}sum roast 24h</code> - 温和吐槽 / 槽点日报
-<code>${mainPrefix}sum cp 24h</code> - CP / 互动嗑糖榜
-<code>${mainPrefix}sum abstract 24h</code> - 抽象指数报告
-<code>${mainPrefix}sum award 24h</code> - 群聊颁奖典礼
-<code>${mainPrefix}sum mood 24h</code> - 群聊情绪天气
-<code>${mainPrefix}sum npc 24h</code> - 群友 RPG 职业分配
-
-<b>实用整理</b>
-<code>${mainPrefix}sum links 24h</code> - 链接和资源整理
-<code>${mainPrefix}sum todo 12h</code> - 待办和未解决问题
-<code>${mainPrefix}sum about AI 24h</code> - 只看某个关键词
+🔎 <b>实用整理</b>
+<code>${mainPrefix}sum links 24h</code> - 🔗 链接资源
+<code>${mainPrefix}sum todo 12h</code> - ✅ 待办提取
+<code>${mainPrefix}sum about AI 24h</code> - 🔎 关键词追踪
 <code>${mainPrefix}sum about AI,Claude -Gemini 24h</code> - 多关键词 / 排除词
-<code>${mainPrefix}sum map 24h</code> - 人物关系网
-<code>${mainPrefix}sum story day</code> - 今日剧情线
-<code>${mainPrefix}sum compare day</code> - 今天 vs 昨天
-<code>${mainPrefix}sum track 24h</code> - 延续争议追踪
+<code>${mainPrefix}sum map 24h</code> - 🕸️ 人物关系网
+<code>${mainPrefix}sum story day</code> - 🎬 剧情线
+<code>${mainPrefix}sum compare day</code> - 📈 今天 vs 昨天
+<code>${mainPrefix}sum track 24h</code> - 🛰️ 延续争议
 
-<b>人物分析</b>
+👤 <b>人物分析</b>
 <code>${mainPrefix}sum 6h @username</code>
 <code>${mainPrefix}sum user 200 张三</code>
 
-<b>排错诊断</b>
-<code>${mainPrefix}sum debug 24h</code> - 查看抓取量 / 采样 / 线路
-<code>${mainPrefix}sum debug 12h @username</code> - 查看人物匹配条数
+🛠️ <b>排错诊断</b>
+<code>${mainPrefix}sum debug 24h</code> - 抓取量 / 采样 / 线路
+<code>${mainPrefix}sum debug 12h @username</code> - 人物匹配条数
 
-中文也能用：<code>热梗</code>、<code>吃瓜</code>、<code>吐槽</code>、<code>槽点</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>、<code>嗑糖</code>、<code>抽象</code>、<code>颁奖</code>、<code>情绪</code>、<code>职业</code>。
-时间可以写：<code>30m</code>、<code>6h</code>、<code>24h</code>、<code>day</code>、<code>week</code>。`;
+💡 <b>小提示</b>
+中文别名可用：<code>热梗</code>、<code>吃瓜</code>、<code>吐槽</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>、<code>嗑糖</code>、<code>抽象</code>、<code>颁奖</code>、<code>情绪</code>、<code>职业</code>。
+时间可写：<code>30m</code>、<code>6h</code>、<code>24h</code>、<code>day</code>、<code>week</code>。`
 
 const helpText = `▎聊天摘要
 
