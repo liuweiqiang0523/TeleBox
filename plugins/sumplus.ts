@@ -360,12 +360,49 @@ function splitProviderFooterText(text: string): { body: string; footer: string }
   };
 }
 
-function formatBlockquoteForTelegram(text: string, mentionLinks: SilentMentionLink[] = []): string {
-  const { body, footer } = splitProviderFooterText(text);
-  const bodyHtml = formatMarkdownForTelegram(body, mentionLinks);
-  const footerHtml = footer ? formatMarkdownForTelegram(footer, mentionLinks) : "";
-  return [`<blockquote>${bodyHtml}</blockquote>`, footerHtml].filter(Boolean).join("\n");
+function formatBlockquoteForTelegram(text: string, _mentionLinks: SilentMentionLink[] = []): string {
+  return normalizeSummaryMentions(normalizeSummaryCardText(text.trim()));
 }
+
+function blockquoteEntitiesForText(text: string): Api.TypeMessageEntity[] {
+  return text
+    ? [new Api.MessageEntityBlockquote({ offset: 0, length: text.length })]
+    : [];
+}
+
+async function sendFormattedSummaryMessage(
+  client: any,
+  chatId: string,
+  text: string,
+  quote: boolean,
+): Promise<void> {
+  if (quote) {
+    await client.sendMessage(chatId, {
+      message: text,
+      formattingEntities: blockquoteEntitiesForText(text),
+      linkPreview: false,
+    });
+    return;
+  }
+  await client.sendMessage(chatId, { message: text, parseMode: "html" });
+}
+
+async function editFormattedSummaryMessage(
+  msg: Api.Message,
+  text: string,
+  quote: boolean,
+): Promise<void> {
+  if (quote) {
+    await msg.edit({
+      text,
+      formattingEntities: blockquoteEntitiesForText(text),
+      linkPreview: false,
+    } as any);
+    return;
+  }
+  await msg.edit({ text, parseMode: "html" });
+}
+
 
 function toInt(value: unknown, fallback: number): number {
   const n = Number(value);
@@ -1378,23 +1415,24 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       : mode === "summary"
       ? formatSummaryForTelegram(rawContent, chatName, mentionLinks)
       : formatCardForTelegram(rawContent, mentionLinks);
+    const quoteResult = !isPersonAnalysis;
 
     if (db.data.replyMode) {
       const client = await getGlobalClient();
       if (!client) throw new Error("Telegram 客户端未初始化");
       for (const part of withPartHeader(splitLongText(result))) {
-        await client.sendMessage(chatId, { message: part, parseMode: "html" });
+        await sendFormattedSummaryMessage(client, chatId, part, quoteResult);
       }
       await msg.delete({ revoke: true });
       return;
     }
 
     const parts = withPartHeader(splitLongText(result));
-    await msg.edit({ text: parts[0], parseMode: "html" });
+    await editFormattedSummaryMessage(msg, parts[0], quoteResult);
     const client = await getGlobalClient();
     if (!client) throw new Error("Telegram 客户端未初始化");
     for (const part of parts.slice(1)) {
-      await client.sendMessage(chatId, { message: part, parseMode: "html" });
+      await sendFormattedSummaryMessage(client, chatId, part, quoteResult);
     }
   } catch (error: any) {
     const message = error?.response?.data?.error?.message || error?.message || String(error);
