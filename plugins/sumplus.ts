@@ -169,7 +169,7 @@ function normalizeMentionNameToken(value: string): string {
   const raw = String(value || "").trim();
   if (!raw || raw.startsWith("＠") || raw.startsWith("@")) return raw;
   if (/^(约|无|未知|N\s*条|HH:mm)$/.test(raw) || /^\d{2}:\d{2}$/.test(raw)) return raw;
-  return `＠${raw}`;
+  return `@${raw}`;
 }
 
 function normalizeMentionList(value: string): string {
@@ -220,7 +220,7 @@ function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLin
       .replace(/\s+([（(])/g, "$1")
       .replace(/([）)])\s+/g, "$1")
       .trim();
-    return clean ? `＠${clean}` : "";
+    return clean ? `@${clean}` : "";
   };
 
   const add = (text: string, display: string, href: string, priority = 0) => {
@@ -259,12 +259,14 @@ function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLin
 
   for (const record of records) {
     const username = record.username.replace(/^@/, "").trim();
+    const priority = (senderCounts.get(record.senderId) || 0) * 10;
+    const idHref = record.senderId ? `tg://user?id=${encodeURIComponent(record.senderId)}` : "";
+    if (idHref) addNameAliases(record, idHref, priority + 1);
     if (!username) continue;
     const href = `tg://resolve?domain=${encodeURIComponent(username)}`;
-    const priority = (senderCounts.get(record.senderId) || 0) * 10;
-    add(`@${username}`, `＠${username}`, href, priority + 3);
-    add(username, `＠${username}`, href, priority + 2);
-    addNameAliases(record, href, priority + 1);
+    add(`@${username}`, `@${username}`, href, priority + 4);
+    add(username, `@${username}`, href, priority + 3);
+    addNameAliases(record, href, priority + 2);
   }
 
   return [...links.values()]
@@ -380,7 +382,38 @@ function isSummaryHeadingLine(line: string, index: number): boolean {
   return false;
 }
 
-function blockquoteEntitiesForText(text: string): Api.TypeMessageEntity[] {
+function mentionEntitiesForText(text: string, mentionLinks: SilentMentionLink[]): Api.TypeMessageEntity[] {
+  if (!text || !mentionLinks.length) return [];
+  const candidates: TextMatch[] = [];
+  for (const item of mentionLinks) {
+    const values = [item.display, item.text].filter(Boolean);
+    for (const value of values) {
+      for (const match of text.matchAll(mentionPattern(value))) {
+        let start = match.index ?? -1;
+        if (start < 0) continue;
+        let end = start + match[0].length;
+        if (start > 0 && (text[start - 1] === "@" || text[start - 1] === "＠")) start -= 1;
+        candidates.push({ start, end, link: item });
+      }
+    }
+  }
+  if (!candidates.length) return [];
+  candidates.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+  const selected: TextMatch[] = [];
+  let cursor = 0;
+  for (const match of candidates) {
+    if (match.start < cursor) continue;
+    selected.push(match);
+    cursor = match.end;
+  }
+  return selected.map((match) => new Api.MessageEntityTextUrl({
+    offset: match.start,
+    length: match.end - match.start,
+    url: match.link.href,
+  }));
+}
+
+function blockquoteEntitiesForText(text: string, mentionLinks: SilentMentionLink[] = []): Api.TypeMessageEntity[] {
   if (!text) return [];
   const entities: Api.TypeMessageEntity[] = [
     new Api.MessageEntityBlockquote({ offset: 0, length: text.length }),
@@ -397,6 +430,7 @@ function blockquoteEntitiesForText(text: string): Api.TypeMessageEntity[] {
     }
     offset += line.length + 1;
   });
+  entities.push(...mentionEntitiesForText(text, mentionLinks));
   return entities;
 }
 
@@ -405,11 +439,12 @@ async function sendFormattedSummaryMessage(
   chatId: string,
   text: string,
   quote: boolean,
+  mentionLinks: SilentMentionLink[] = [],
 ): Promise<void> {
   if (quote) {
     await client.sendMessage(chatId, {
       message: text,
-      formattingEntities: blockquoteEntitiesForText(text),
+      formattingEntities: blockquoteEntitiesForText(text, mentionLinks),
       linkPreview: false,
     });
     return;
@@ -421,11 +456,12 @@ async function editFormattedSummaryMessage(
   msg: Api.Message,
   text: string,
   quote: boolean,
+  mentionLinks: SilentMentionLink[] = [],
 ): Promise<void> {
   if (quote) {
     await msg.edit({
       text,
-      formattingEntities: blockquoteEntitiesForText(text),
+      formattingEntities: blockquoteEntitiesForText(text, mentionLinks),
       linkPreview: false,
     } as any);
     return;
@@ -1449,18 +1485,18 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       const client = await getGlobalClient();
       if (!client) throw new Error("Telegram 客户端未初始化");
       for (const part of withPartHeader(splitLongText(result))) {
-        await sendFormattedSummaryMessage(client, chatId, part, quoteResult);
+        await sendFormattedSummaryMessage(client, chatId, part, quoteResult, mentionLinks);
       }
       await msg.delete({ revoke: true });
       return;
     }
 
     const parts = withPartHeader(splitLongText(result));
-    await editFormattedSummaryMessage(msg, parts[0], quoteResult);
+    await editFormattedSummaryMessage(msg, parts[0], quoteResult, mentionLinks);
     const client = await getGlobalClient();
     if (!client) throw new Error("Telegram 客户端未初始化");
     for (const part of parts.slice(1)) {
-      await sendFormattedSummaryMessage(client, chatId, part, quoteResult);
+      await sendFormattedSummaryMessage(client, chatId, part, quoteResult, mentionLinks);
     }
   } catch (error: any) {
     const message = error?.response?.data?.error?.message || error?.message || String(error);
