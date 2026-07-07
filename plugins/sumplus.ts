@@ -193,6 +193,11 @@ function formatSummaryForTelegram(text: string, chatName: string, mentionLinks: 
   return formatMarkdownForTelegram(cardText, mentionLinks);
 }
 
+function formatCardForTelegram(text: string, mentionLinks: SilentMentionLink[] = []): string {
+  const cardText = normalizeSummaryMentions(normalizeSummaryCardText(text));
+  return formatMarkdownForTelegram(cardText, mentionLinks);
+}
+
 function buildSilentMentionLinks(records: ChatMessageRecord[]): SilentMentionLink[] {
   const links = new Map<string, SilentMentionLink>();
   const senderCounts = new Map<string, number>();
@@ -1353,9 +1358,9 @@ async function handleCommand(msg: Api.Message): Promise<void> {
     const mentionLinks = buildSilentMentionLinks(fetchResult.records);
     const result = isPersonAnalysis
       ? formatMarkdownForTelegram(rawContent, mentionLinks)
-      : special
-      ? formatMarkdownForTelegram(rawContent, mentionLinks)
-      : formatSummaryForTelegram(rawContent, chatName, mentionLinks);
+      : mode === "summary"
+      ? formatSummaryForTelegram(rawContent, chatName, mentionLinks)
+      : formatCardForTelegram(rawContent, mentionLinks);
 
     if (db.data.replyMode) {
       const client = await getGlobalClient();
