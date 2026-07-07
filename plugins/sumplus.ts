@@ -371,10 +371,33 @@ function formatBlockquoteForTelegram(text: string, _mentionLinks: SilentMentionL
   return normalizeSummaryMentions(normalizeSummaryCardText(normalizeSummaryHeadings(text.trim())));
 }
 
+function isSummaryHeadingLine(line: string, index: number): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (index === 0) return true;
+  if (/^[⏰🏆🔥✨💬✅🧭📊]\s/.test(trimmed)) return true;
+  if (/^\d+[️⃣.]\s*/u.test(trimmed)) return true;
+  return false;
+}
+
 function blockquoteEntitiesForText(text: string): Api.TypeMessageEntity[] {
-  return text
-    ? [new Api.MessageEntityBlockquote({ offset: 0, length: text.length })]
-    : [];
+  if (!text) return [];
+  const entities: Api.TypeMessageEntity[] = [
+    new Api.MessageEntityBlockquote({ offset: 0, length: text.length }),
+  ];
+  let offset = 0;
+  text.split(/\n/).forEach((line, index) => {
+    if (isSummaryHeadingLine(line, index)) {
+      const leading = line.match(/^\s*/)?.[0].length || 0;
+      const trailing = line.match(/\s*$/)?.[0].length || 0;
+      const length = line.length - leading - trailing;
+      if (length > 0) {
+        entities.push(new Api.MessageEntityBold({ offset: offset + leading, length }));
+      }
+    }
+    offset += line.length + 1;
+  });
+  return entities;
 }
 
 async function sendFormattedSummaryMessage(
