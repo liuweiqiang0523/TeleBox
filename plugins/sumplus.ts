@@ -158,10 +158,17 @@ function normalizeSummaryCardText(text: string): string {
     .join("\n");
 }
 
+function normalizeSummaryHeadings(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^(\s*)#{1,6}\s+/, "$1"))
+    .join("\n");
+}
+
 function normalizeMentionNameToken(value: string): string {
   const raw = String(value || "").trim();
   if (!raw || raw.startsWith("＠") || raw.startsWith("@")) return raw;
-  if (/^(约|无|未知|N\s*条|HH:mm|\d{2}:\d{2})/.test(raw)) return raw;
+  if (/^(约|无|未知|N\s*条|HH:mm)$/.test(raw) || /^\d{2}:\d{2}$/.test(raw)) return raw;
   return `＠${raw}`;
 }
 
@@ -361,7 +368,7 @@ function splitProviderFooterText(text: string): { body: string; footer: string }
 }
 
 function formatBlockquoteForTelegram(text: string, _mentionLinks: SilentMentionLink[] = []): string {
-  return normalizeSummaryMentions(normalizeSummaryCardText(text.trim()));
+  return normalizeSummaryMentions(normalizeSummaryCardText(normalizeSummaryHeadings(text.trim())));
 }
 
 function blockquoteEntitiesForText(text: string): Api.TypeMessageEntity[] {
@@ -1410,12 +1417,10 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       rangeLabel: effectiveRange.label,
     })}`;
     const mentionLinks = buildSilentMentionLinks(fetchResult.records);
-    const result = isPersonAnalysis
-      ? formatMarkdownForTelegram(rawContent, mentionLinks)
-      : mode === "summary"
+    const result = mode === "summary"
       ? formatSummaryForTelegram(rawContent, chatName, mentionLinks)
       : formatCardForTelegram(rawContent, mentionLinks);
-    const quoteResult = !isPersonAnalysis;
+    const quoteResult = true;
 
     if (db.data.replyMode) {
       const client = await getGlobalClient();
