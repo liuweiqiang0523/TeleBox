@@ -189,7 +189,7 @@ function normalizeSummaryMentions(text: string): string {
     .map((line) => {
       let next = line;
       next = next.replace(/^(\s*(?:[•-]\s*)?👥\s*核心用户：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names)}`);
-      next = next.replace(/^(\s*👥\s*主要参与：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names)}`);
+      next = next.replace(/^(\s*[👤👥]\s*(?:主要参与|参与用户|相关用户)：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names)}`);
       next = next.replace(/^(\s*(?:[•-]\s*)?[🥇🥈🥉]\s*)([^：\n]+)(：约\s*\d+\s*条｜称号：.+)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name)}${suffix}`);
       next = next.replace(/^(\s*(?:[•-]\s*)?🗣️\s*)([^：「\n]+)(：「.*)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name)}${suffix}`);
       return next;
