@@ -661,7 +661,7 @@ function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] 
         item.media > 0 ? `媒体 ${item.media}` : "",
         item.chars / Math.max(1, item.count) > 60 ? "长消息" : "短句互动",
       ].filter(Boolean);
-      return `${item.sender}：${traits.join(" / ") || "普通互动"}；称号应围绕真实话题生成，尽量稳定、不冒犯`;
+      return `${item.sender}：${traits.join(" / ") || "普通互动"}；称号要围绕真实话题生成，可以更狠更有梗，但只吐槽发言风格/群聊角色，不做人身攻击`;
     });
 
   return hints.length ? ["称号库提示：", ...hints] : [];
