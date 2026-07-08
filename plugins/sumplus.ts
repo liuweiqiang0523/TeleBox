@@ -797,9 +797,9 @@ function resolveRangeToken(rangeToken: string | undefined): {
 }
 
 function getSummaryDensity(durationMinutes: number | null, count: number): SummaryDensity {
-  const largeTopicLimit = count >= 1000 ? 6 : count >= 500 ? 5 : count >= 250 ? 4 : 3;
-  const largeTargetLength = count >= 1000 ? "1800-2600 中文字，必须完整收尾" : count >= 500 ? "1400-2000 中文字，必须完整收尾" : "900-1400 中文字";
-  const largeMaxOutputLength = count >= 1000 ? 4800 : count >= 500 ? 3800 : 2400;
+  const largeTopicLimit = count >= 1000 ? 7 : count >= 500 ? 6 : count >= 250 ? 5 : 3;
+  const largeTargetLength = count >= 1000 ? "2000-3000 中文字，必须完整收尾" : count >= 500 ? "1700-2400 中文字，必须完整收尾" : "1100-1600 中文字";
+  const largeMaxOutputLength = count >= 1000 ? 5600 : count >= 500 ? 4600 : 3000;
 
   if (durationMinutes === null) {
     if (count <= 50) {
@@ -829,12 +829,12 @@ function getSummaryDensity(durationMinutes: number | null, count: number): Summa
     return {
       label: "标准",
       targetLength: "500-800 中文字",
-      topicLimit: count >= 250 ? 4 : 3,
+      topicLimit: count >= 500 ? 6 : count >= 250 ? 5 : 3,
       pointLimit: 2,
       highlightLimit: 3,
       quoteLimit: 2,
       todoLimit: 3,
-      maxOutputLength: count >= 250 ? 1900 : 1600,
+      maxOutputLength: count >= 500 ? 4200 : count >= 250 ? 2600 : 1600,
     };
   }
 
@@ -866,12 +866,12 @@ function getSummaryDensity(durationMinutes: number | null, count: number): Summa
     return {
       label: "标准",
       targetLength: count >= 250 ? "700-1000 中文字" : "500-800 中文字",
-      topicLimit: count >= 250 ? 4 : 3,
+      topicLimit: count >= 500 ? 6 : count >= 250 ? 5 : 3,
       pointLimit: 2,
       highlightLimit: 3,
       quoteLimit: 2,
       todoLimit: 3,
-      maxOutputLength: count >= 250 ? 1900 : 1600,
+      maxOutputLength: count >= 500 ? 4200 : count >= 250 ? 2600 : 1600,
     };
   }
   return {

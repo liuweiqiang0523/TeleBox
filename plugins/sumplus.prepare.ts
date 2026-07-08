@@ -1,9 +1,9 @@
 import type { ChatMessageRecord, IdentityCache, PreparedInput, SumMode } from "./sumplus.types";
 
 const MAX_MESSAGE_CHARS = 800;
-const MAX_SUMMARY_SAMPLE_LINES = 220;
+const MAX_SUMMARY_SAMPLE_LINES = 280;
 const MAX_PERSON_CONTEXT_LINES = 220;
-const SUMMARY_MESSAGE_CHAR_BUDGET = 24000;
+const SUMMARY_MESSAGE_CHAR_BUDGET = 32000;
 const PERSON_CONTEXT_RADIUS = 2;
 const URL_PATTERN = /https?:\/\/[^\s<>"'，。！？；、）)】\]]+/gi;
 const MEME_STOP_WORDS = new Set([
@@ -632,6 +632,9 @@ export function buildLocalSummaryStats(records: ChatMessageRecord[], prepared: P
     `链接数：${linkCount}；疑问句/问题数：${questionCount}`,
     ...buildRepeatStats(sorted, 6),
     ...buildUserTitleHints(sorted),
+    "",
+    "全量复读/热词统计：以下候选基于全量消息，不是采样；如果出现高频复读、刷屏、口头禅或集体跟风，摘要必须写进重点话题、亮点或名场面，不能因为它是重复短句就忽略。",
+    ...buildMemeStats(sorted),
   ];
 }
 
@@ -658,7 +661,7 @@ function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] 
         item.media > 0 ? `媒体 ${item.media}` : "",
         item.chars / Math.max(1, item.count) > 60 ? "长消息" : "短句互动",
       ].filter(Boolean);
-      return `${item.sender}：${traits.join(" / ") || "普通互动"}；称号应围绕真实话题生成，尽量稳定、不冒犯`;
+      return `${item.sender}：${traits.join(" / ") || "普通互动"}；称号要围绕真实话题生成，可以更狠更有梗，但只吐槽发言风格/群聊角色，不做人身攻击`;
     });
 
   return hints.length ? ["称号库提示：", ...hints] : [];
