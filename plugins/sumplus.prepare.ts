@@ -630,6 +630,7 @@ export function buildLocalSummaryStats(records: ChatMessageRecord[], prepared: P
     `活跃时段 TOP：${activeHours.length ? activeHours.join("；") : "无"}`,
     `核心用户 TOP：${topUsers.map((user) => `${user.sender} ${user.count} 条`).join("；") || "无"}`,
     `链接数：${linkCount}；疑问句/问题数：${questionCount}`,
+    ...buildRepeatStats(sorted, 6),
     ...buildUserTitleHints(sorted),
   ];
 }
@@ -661,6 +662,56 @@ function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] 
     });
 
   return hints.length ? ["称号库提示：", ...hints] : [];
+}
+
+function normalizeRepeatContent(content: string): string {
+  const text = content
+    .replace(URL_PATTERN, " ")
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text || text.length < 2 || text.length > 40) return "";
+  if (isQuestion(text)) return "";
+  if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u.test(text)) return "";
+  return text;
+}
+
+function buildRepeatStats(records: ChatMessageRecord[], limit = 6): string[] {
+  const counts = new Map<string, { text: string; count: number; users: Set<string>; first: number; last: number }>();
+  for (const record of records) {
+    const text = normalizeRepeatContent(record.content);
+    if (!text) continue;
+    const key = text.toLowerCase();
+    const item = counts.get(key) || {
+      text,
+      count: 0,
+      users: new Set<string>(),
+      first: record.timestamp,
+      last: record.timestamp,
+    };
+    item.count += 1;
+    item.users.add(record.sender);
+    item.first = Math.min(item.first, record.timestamp);
+    item.last = Math.max(item.last, record.timestamp);
+    counts.set(key, item);
+  }
+
+  const repeated = [...counts.values()]
+    .filter((item) => item.count >= 3 || (item.count >= 2 && item.users.size >= 2))
+    .sort((a, b) => b.count - a.count || b.users.size - a.users.size)
+    .slice(0, limit)
+    .map((item) => {
+      const users = [...item.users].slice(0, 4).join("、");
+      const timeRange = item.first === item.last
+        ? formatDate(new Date(item.first * 1000))
+        : `${formatDate(new Date(item.first * 1000))} 至 ${formatDate(new Date(item.last * 1000))}`;
+      return `「${item.text}」：${item.count} 次｜${item.users.size} 人｜用户：${users}｜时间：${timeRange}`;
+    });
+
+  return [
+    "复读/刷屏候选：",
+    ...(repeated.length ? repeated : ["无明显复读/刷屏"]),
+  ];
 }
 
 function buildMemeStats(records: ChatMessageRecord[]): string[] {
@@ -776,6 +827,8 @@ function prepareCpInput(records: ChatMessageRecord[]): PreparedInput {
       "",
       ...buildRelationStats(records, pairLimit, mentionLimit),
       "",
+      ...buildRepeatStats(records, 6),
+      "",
       ...buildQuoteCandidateLines(records).slice(0, quoteLimit),
       "",
       "代表性消息：",
@@ -809,6 +862,8 @@ function prepareMemeInput(records: ChatMessageRecord[]): PreparedInput {
     lines: [
       ...buildMemeStats(records),
       "",
+      ...buildRepeatStats(records, 8),
+      "",
       ...buildQuoteCandidateLines(records).slice(0, 80),
       "",
       "代表性消息：",
@@ -830,6 +885,8 @@ function prepareRoastInput(records: ChatMessageRecord[]): PreparedInput {
       "",
       ...buildMemeStats(records),
       "",
+      ...buildRepeatStats(records, 8),
+      "",
       ...buildQuoteCandidateLines(records).slice(0, 80),
       "",
       "代表性消息：",
@@ -844,6 +901,8 @@ function prepareRelationInput(records: ChatMessageRecord[]): PreparedInput {
   return {
     lines: [
       ...buildRelationStats(records),
+      "",
+      ...buildRepeatStats(records, 6),
       "",
       ...buildRankStats(records),
       "",
@@ -860,6 +919,8 @@ function prepareQuotesInput(records: ChatMessageRecord[]): PreparedInput {
   return {
     lines: [
       ...quoteLines,
+      "",
+      ...buildRepeatStats(records, 6),
       "",
       "代表性消息：",
       ...sampled.lines.slice(0, 100),
@@ -903,6 +964,8 @@ function prepareRankInput(records: ChatMessageRecord[]): PreparedInput {
     lines: [
       ...buildRankStats(records),
       ...buildUserTitleHints(records),
+      "",
+      ...buildRepeatStats(records, 6),
       "",
       "代表性消息：",
       ...sampled.lines.slice(0, 140),
@@ -980,6 +1043,29 @@ export function prepareKeywordInput(records: ChatMessageRecord[], keyword: strin
   };
 }
 
+function prepareGeneralModeInput(records: ChatMessageRecord[], mode: SumMode): PreparedInput {
+  const sampled = prepareSummaryInput(records);
+  const localStats = buildLocalSummaryStats(records, sampled);
+  const quoteLimit = records.length >= 500 ? 80 : records.length >= 120 ? 60 : 35;
+  const sampleLimit = records.length >= 500 ? 150 : records.length >= 120 ? 120 : 80;
+  const lines = [
+    `模式提示：${mode} 模式需要结合本地统计、复读/刷屏候选、金句候选和代表性消息判断重点。`,
+    "",
+    ...localStats,
+    "",
+    ...buildMemeStats(records),
+    "",
+    ...buildQuoteCandidateLines(records).slice(0, quoteLimit),
+    "",
+    "代表性消息：",
+    ...sampled.lines.slice(0, sampleLimit),
+  ];
+  return {
+    lines,
+    note: `已为 ${mode} 模式整理本地统计、复读/刷屏候选、热词、金句和代表性消息`,
+  };
+}
+
 export function prepareSpecialInput(mode: SumMode, records: ChatMessageRecord[], keyword?: string): PreparedInput {
   if (mode === "rank") return prepareRankInput(records);
   if (mode === "links") return prepareLinksInput(records);
@@ -991,5 +1077,5 @@ export function prepareSpecialInput(mode: SumMode, records: ChatMessageRecord[],
   if (mode === "cp") return prepareCpInput(records);
   if (mode === "award" || mode === "npc") return prepareRankInput(records);
   if (mode === "abstract" || mode === "mood") return prepareMemeInput(records);
-  return prepareSummaryInput(records);
+  return prepareGeneralModeInput(records, mode);
 }
