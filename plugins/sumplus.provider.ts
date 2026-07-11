@@ -186,6 +186,7 @@ function normalizeGeminiUsage(usage: any): TokenUsage | undefined {
 }
 
 async function callOpenAI(config: SumConfig, messages: string): Promise<ModelCallResult> {
+  const isGpt5Family = /^gpt-5(?:\.|-|$)/i.test(config.model.trim());
   const data = await postJsonWithCurl(
     openAIChatCompletionsUrl(config.baseUrl),
     config.apiKey,
@@ -197,6 +198,7 @@ async function callOpenAI(config: SumConfig, messages: string): Promise<ModelCal
       ],
       temperature: 0.2,
       max_tokens: Math.max(256, Math.min(5200, config.maxOutputLength || 1200)),
+      ...(isGpt5Family ? { reasoning_effort: "minimal", verbosity: "low" } : {}),
       stream: Boolean(config.stream),
     },
   );
@@ -259,6 +261,7 @@ export async function summarize(config: SumConfig, messages: string): Promise<Su
   for (const provider of providers) {
     if (!provider.apiKey) continue;
 
+    const startedAt = Date.now();
     try {
       const providerConfig = {
         ...config,
@@ -269,6 +272,9 @@ export async function summarize(config: SumConfig, messages: string): Promise<Su
         providerConfig.type === "gemini"
           ? await callGemini(providerConfig, messages)
           : await callOpenAI(providerConfig, messages);
+      console.info(
+        `[sumplus] provider=${provider.name || provider.baseUrl} model=${provider.model} durationMs=${Date.now() - startedAt}`,
+      );
 
       const content = stripThinking(result.content);
       return {
@@ -284,6 +290,7 @@ export async function summarize(config: SumConfig, messages: string): Promise<Su
     } catch (error: any) {
       const name = provider.name || provider.baseUrl;
       const message = error?.response?.data?.error?.message || error?.message || String(error);
+      console.warn(`[sumplus] provider=${name} model=${provider.model} failed durationMs=${Date.now() - startedAt}: ${message}`);
       errors.push(`${name}: ${message}`);
     }
   }
