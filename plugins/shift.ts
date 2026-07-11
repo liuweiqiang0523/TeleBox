@@ -712,14 +712,19 @@ function enqueueGroupMessage(
       throwIfAborted(context?.signal);
       if (existed.shouldForward) {
         const ids = existed.messages.map((m) => Number(m.id));
-        await forwardGroupMessages(
-          client,
-          existed.sourceId,
-          existed.targetId,
-          ids,
-          existed.options
-        );
         markForwarded(dedupeKey);
+        try {
+          await forwardGroupMessages(
+            client,
+            existed.sourceId,
+            existed.targetId,
+            ids,
+            existed.options
+          );
+        } catch (error) {
+          forwardedDedupeKeys.delete(dedupeKey);
+          throw error;
+        }
         const first = existed.messages[0];
         if (first)
           updateStats(existed.sourceId, existed.targetId, getMediaType(first));
@@ -2339,20 +2344,25 @@ async function handleIncomingMessage(
       }, msg=${message.id}`
     );
     const client = await getGlobalClient();
-    await shiftForwardMessage(
-      client,
-      sourceId,
-      targetId,
-      message.id,
-      undefined,
-      {
-        silent: options?.includes("silent"),
-        replyTo,
-        dropAuthor:
-          options?.includes("drop_author") || options?.includes("dropAuthor"),
-      }
-    );
     markForwarded(dedupeKey);
+    try {
+      await shiftForwardMessage(
+        client,
+        sourceId,
+        targetId,
+        message.id,
+        undefined,
+        {
+          silent: options?.includes("silent"),
+          replyTo,
+          dropAuthor:
+            options?.includes("drop_author") || options?.includes("dropAuthor"),
+        }
+      );
+    } catch (error) {
+      forwardedDedupeKeys.delete(dedupeKey);
+      throw error;
+    }
 
     // Update stats
     updateStats(sourceId, targetId, messageType);
