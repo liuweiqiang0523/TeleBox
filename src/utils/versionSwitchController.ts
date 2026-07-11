@@ -61,27 +61,86 @@ const READY_POLL_MS = 2_000;
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-function pm2(action: "stop" | "start" | "restart", name: string): void {
-  const result = spawnSync("pm2", [action, name], {
+function getPm2Process(name: string): { name: string; pid: number; pm2_env?: { status: string } } | undefined {
+  try {
+    const out = execSync("pm2 jlist", { encoding: "utf8", timeout: 10_000 });
+    const list: Array<{ name: string; pid: number; pm2_env?: { status: string } }> = JSON.parse(out);
+    return list.find((p) => p.name === name);
+  } catch {
+    return undefined;
+  }
+}
+
+function runPm2(args: string[], label: string, allowMissing = false): void {
+  const result = spawnSync("pm2", args, {
     stdio: "pipe",
     timeout: 30_000,
   });
+  const output = `${result.stdout.toString()}${result.stderr.toString()}`;
   if (result.status !== 0) {
-    throw new Error(`pm2 ${action} ${name} failed: ${result.stderr.toString()}`);
+    if (allowMissing && /not found|doesn't exist|process or namespace not found/i.test(output)) {
+      console.log(`[controller] pm2 ${label}: process missing, treated as OK`);
+      return;
+    }
+    throw new Error(`pm2 ${label} failed: ${output}`);
   }
-  console.log(`[controller] pm2 ${action} ${name} OK`);
+  console.log(`[controller] pm2 ${label} OK`);
+}
+
+function pm2Stop(name: string): void {
+  if (!getPm2Process(name)) {
+    console.log(`[controller] pm2 stop ${name}: process missing, treated as OK`);
+    return;
+  }
+  runPm2(["stop", name], `stop ${name}`);
+}
+
+function pm2StartVersion(version: "teleproto" | "mtcute"): void {
+  const name = PM2_NAMES[version];
+  const repo = REPO_ROOTS[version];
+
+  if (getPm2Process(name)) {
+    // Recreate the PM2 process so stale ecosystem/launcher definitions are not reused.
+    runPm2(["delete", name], `delete stale ${name}`);
+  }
+
+  const command = "exec node scripts/run-tsx.cjs ./src/index.ts";
+  runPm2([
+    "start", "bash",
+    "--name", name,
+    "--cwd", repo,
+    "--time",
+    "--max-memory-restart", "512M",
+    "--restart-delay", "5000",
+    "--", "-lc", command,
+  ], `start ${name} via bash command`);
+}
+
+function pm2(action: "stop" | "start" | "restart", name: string): void {
+  const version = (Object.entries(PM2_NAMES) as Array<["teleproto" | "mtcute", string]>).find(([, pm2Name]) => pm2Name === name)?.[0];
+
+  if (action === "stop") {
+    pm2Stop(name);
+    return;
+  }
+
+  if (action === "start" && version) {
+    pm2StartVersion(version);
+    return;
+  }
+
+  if (action === "restart" && version) {
+    pm2Stop(name);
+    pm2StartVersion(version);
+    return;
+  }
+
+  runPm2([action, name], `${action} ${name}`);
 }
 
 function isPm2Online(name: string): boolean {
-  try {
-    const out = execSync(`pm2 jlist`, { encoding: "utf8", timeout: 10_000 });
-    const list: Array<{ name: string; pid: number; pm2_env?: { status: string } }> =
-      JSON.parse(out);
-    const proc = list.find((p) => p.name === name);
-    return proc?.pm2_env?.status === "online" && proc.pid > 0;
-  } catch {
-    return false;
-  }
+  const proc = getPm2Process(name);
+  return proc?.pm2_env?.status === "online" && proc.pid > 0;
 }
 
 function loadPluginIndex(version: "teleproto" | "mtcute"): Record<string, PluginIndexEntry> {
@@ -122,16 +181,22 @@ async function main(): Promise<void> {
   let extPath: string;
 
   if (skipLogin && envSource && envTarget) {
-    // Fast path: external session already exists
+    // Fast path: session already exists (native or external)
     source = envSource;
     target = envTarget;
     console.log(`[controller] Fast-path switching ${source} → ${target}`);
 
+    const targetSession = state.sessions[target];
     extPath = resolveExternalSessionPath(target, DEFAULT_SWITCH_HOME) ?? "";
-    if (!extPath) {
-      throw new Error("SWITCH_SKIP_LOGIN set but no external session registered for " + target);
+    if (targetSession.kind === "native") {
+      // Native session — the session lives in the target repo already, no injection needed
+      extPath = "";
+      console.log(`[controller] Target ${target} has native session — no injection needed`);
+    } else if (!extPath) {
+      throw new Error("SWITCH_SKIP_LOGIN set but no session registered for " + target);
+    } else {
+      console.log(`[controller] Using existing external session: ${extPath}`);
     }
-    console.log(`[controller] Using existing external session: ${extPath}`);
   } else {
     // Slow path: login required
     const pendingLogin = state.pendingLogin;
