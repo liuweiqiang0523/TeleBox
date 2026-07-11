@@ -797,9 +797,9 @@ function resolveRangeToken(rangeToken: string | undefined): {
 }
 
 function getSummaryDensity(durationMinutes: number | null, count: number): SummaryDensity {
-  const largeTopicLimit = count >= 1000 ? 6 : count >= 500 ? 5 : count >= 250 ? 4 : 3;
-  const largeTargetLength = count >= 1000 ? "1800-2600 中文字，必须完整收尾" : count >= 500 ? "1400-2000 中文字，必须完整收尾" : "900-1400 中文字";
-  const largeMaxOutputLength = count >= 1000 ? 4800 : count >= 500 ? 3800 : 2400;
+  const largeTopicLimit = count >= 1000 ? 5 : count >= 500 ? 4 : 3;
+  const largeTargetLength = count >= 1000 ? "1300-1800 中文字，必须完整收尾" : count >= 500 ? "900-1300 中文字，必须完整收尾" : "650-900 中文字";
+  const largeMaxOutputLength = count >= 1000 ? 2600 : count >= 500 ? 2000 : 1400;
 
   if (durationMinutes === null) {
     if (count <= 50) {
@@ -829,12 +829,12 @@ function getSummaryDensity(durationMinutes: number | null, count: number): Summa
     return {
       label: "标准",
       targetLength: "500-800 中文字",
-      topicLimit: count >= 250 ? 4 : 3,
+      topicLimit: 3,
       pointLimit: 2,
       highlightLimit: 3,
       quoteLimit: 2,
       todoLimit: 3,
-      maxOutputLength: count >= 250 ? 1900 : 1600,
+      maxOutputLength: count >= 250 ? 1500 : 1300,
     };
   }
 
@@ -865,13 +865,13 @@ function getSummaryDensity(durationMinutes: number | null, count: number): Summa
   if (durationMinutes < 360) {
     return {
       label: "标准",
-      targetLength: count >= 250 ? "700-1000 中文字" : "500-800 中文字",
-      topicLimit: count >= 250 ? 4 : 3,
+      targetLength: count >= 250 ? "550-850 中文字" : "450-700 中文字",
+      topicLimit: 3,
       pointLimit: 2,
       highlightLimit: 3,
       quoteLimit: 2,
       todoLimit: 3,
-      maxOutputLength: count >= 250 ? 1900 : 1600,
+      maxOutputLength: count >= 250 ? 1400 : 1200,
     };
   }
   return {
@@ -1542,7 +1542,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
         ? 1100
         : special
         ? Math.max(db.data.maxOutputLength || 0, 1800)
-        : Math.max(db.data.maxOutputLength || 0, density.maxOutputLength),
+        : Math.min(db.data.maxOutputLength || density.maxOutputLength, density.maxOutputLength),
     };
     const summaryResult = await summarize(summaryConfig, summaryInput);
     const rawContent = `${summaryResult.content}${providerFooter(summaryResult.provider, {

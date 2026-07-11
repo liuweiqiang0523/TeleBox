@@ -1,9 +1,9 @@
 import type { ChatMessageRecord, IdentityCache, PreparedInput, SumMode } from "./sumplus.types";
 
 const MAX_MESSAGE_CHARS = 800;
-const MAX_SUMMARY_SAMPLE_LINES = 220;
+const MAX_SUMMARY_SAMPLE_LINES = 160;
 const MAX_PERSON_CONTEXT_LINES = 220;
-const SUMMARY_MESSAGE_CHAR_BUDGET = 24000;
+const SUMMARY_MESSAGE_CHAR_BUDGET = 18000;
 const PERSON_CONTEXT_RADIUS = 2;
 const URL_PATTERN = /https?:\/\/[^\s<>"'，。！？；、）)】\]]+/gi;
 const MEME_STOP_WORDS = new Set([
@@ -139,12 +139,12 @@ function compactLinesToBudget(lines: string[], budget: number): string[] {
 
 function prepareFlatSummaryInput(records: ChatMessageRecord[]): PreparedInput {
   let maxLines = MAX_SUMMARY_SAMPLE_LINES;
-  let maxContentChars = 180;
+  let maxContentChars = 140;
   let sampled = sampleRecords(records, maxLines);
   let lines = sampled.records.map((record) => recordToLine(record, { maxContentChars }));
 
-  while (lines.join("\n").length > SUMMARY_MESSAGE_CHAR_BUDGET && maxLines > 80) {
-    maxLines = Math.max(80, Math.floor(maxLines * 0.75));
+  while (lines.join("\n").length > SUMMARY_MESSAGE_CHAR_BUDGET && maxLines > 70) {
+    maxLines = Math.max(70, Math.floor(maxLines * 0.75));
     maxContentChars = Math.max(100, maxContentChars - 30);
     sampled = sampleRecords(records, maxLines);
     lines = sampled.records.map((record) => recordToLine(record, { maxContentChars }));
