@@ -577,10 +577,6 @@ class TracePlugin extends Plugin {
     return [...new Set(validReactions)];
   }
 
-  private reactionLabel(reaction: string | BigInteger): string {
-    return typeof reaction === "string" ? reaction : `[Premium:${reaction.toString().slice(0, 8)}]`;
-  }
-
   private isIgnorableReactionError(error: any): boolean {
     const message = String(error?.message || error || "");
     return (
@@ -613,11 +609,9 @@ class TracePlugin extends Plugin {
     // Keep trace lightweight: send the first valid configured reaction. If an
     // old config contains invalid fragments or stale Premium emoji IDs, try the
     // next candidate instead of flooding PM2 with stack traces.
-    const invalidReactions: string[] = [];
     for (const reaction of reactions.slice(0, 5)) {
       const reactionObject = this.toReactionObject(reaction);
       if (!reactionObject) {
-        invalidReactions.push(this.reactionLabel(reaction));
         continue;
       }
 
@@ -630,21 +624,30 @@ class TracePlugin extends Plugin {
             big,
           })
         );
-        if (invalidReactions.length) {
-          console.warn(`[trace] Skipped invalid reaction(s): ${invalidReactions.join(" ")}`);
-        }
         return;
       } catch (error: any) {
         if (this.isIgnorableReactionError(error)) {
-          invalidReactions.push(this.reactionLabel(reaction));
           continue;
         }
         throw error;
       }
     }
 
-    if (invalidReactions.length) {
-      console.warn(`[trace] No valid reaction sent; skipped: ${invalidReactions.join(" ")}`);
+    // Stale Premium emoji IDs are common after account or pack changes. Keep
+    // tracing useful with a standard reaction instead of warning on every hit.
+    if (!reactions.some((reaction) => reaction === "👍")) {
+      try {
+        await client.invoke(
+          new Api.messages.SendReaction({
+            peer,
+            msgId,
+            reaction: [new Api.ReactionEmoji({ emoticon: "👍" })],
+            big,
+          })
+        );
+      } catch (error: any) {
+        if (!this.isIgnorableReactionError(error)) throw error;
+      }
     }
   }
 
