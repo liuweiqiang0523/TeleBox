@@ -198,7 +198,7 @@ async function callOpenAI(config: SumConfig, messages: string): Promise<ModelCal
       ],
       temperature: 0.2,
       max_tokens: Math.max(256, Math.min(5200, config.maxOutputLength || 1200)),
-      ...(isGpt5Family ? { reasoning_effort: "minimal", verbosity: "low" } : {}),
+      ...(isGpt5Family ? { reasoning_effort: "none", verbosity: "low" } : {}),
       stream: Boolean(config.stream),
     },
   );
