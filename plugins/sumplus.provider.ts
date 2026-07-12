@@ -160,6 +160,47 @@ type ModelCallResult = {
   usage?: TokenUsage;
 };
 
+const FALLBACK_FORMAT_GUARD = `
+
+【供应商通用格式守卫】
+你可能是备用线路，但输出格式必须与主线路完全一致。
+必须逐字保留上方模板规定的一级、二级栏目标题及顺序。
+禁止自创标题、重复标题、解释性前言、Markdown 星号列表或整段加粗。
+只生成模板正文，不要说明你遵守了哪些规则。`;
+
+function requiredTemplateHeadings(prompt: string): string[] {
+  const markerIndex = Math.max(
+    prompt.lastIndexOf("【固定输出模板】"),
+    prompt.lastIndexOf("【输出模板】"),
+  );
+  const template = markerIndex >= 0 ? prompt.slice(markerIndex) : prompt;
+  return Array.from(template.matchAll(/^##\s+[^\n]+$/gm), (match) => match[0].trim());
+}
+
+function templateDriftReasons(content: string, prompt: string): string[] {
+  const reasons: string[] = [];
+  const trimmed = content.trim();
+  if (!/^#\s+\S/m.test(trimmed) || !trimmed.startsWith("# ")) reasons.push("一级标题不符合模板");
+  for (const heading of requiredTemplateHeadings(prompt)) {
+    if (!trimmed.includes(heading)) reasons.push(`缺少栏目 ${heading.replace(/^##\s+/, "")}`);
+  }
+  if (/^\s*\*\s+/m.test(trimmed)) reasons.push("使用了星号列表");
+  if (prompt.includes("禁止使用 **Markdown 加粗**") && trimmed.includes("**")) reasons.push("使用了禁用的加粗");
+  if (trimmed.includes("```")) reasons.push("使用了代码块");
+  return reasons;
+}
+
+function addTokenUsage(first?: TokenUsage, second?: TokenUsage): TokenUsage | undefined {
+  if (!first) return second;
+  if (!second) return first;
+  const add = (a?: number, b?: number) => a === undefined && b === undefined ? undefined : (a || 0) + (b || 0);
+  return {
+    promptTokens: add(first.promptTokens, second.promptTokens),
+    completionTokens: add(first.completionTokens, second.completionTokens),
+    totalTokens: add(first.totalTokens, second.totalTokens),
+  };
+}
+
 function numberFromUsage(value: unknown): number | undefined {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : undefined;
@@ -258,7 +299,7 @@ export async function summarize(config: SumConfig, messages: string): Promise<Su
     throw new Error("请先配置 API Key：.sum key YOUR_API_KEY");
   }
 
-  for (const provider of providers) {
+  for (const [providerIndex, provider] of providers.entries()) {
     if (!provider.apiKey) continue;
 
     const startedAt = Date.now();
@@ -267,16 +308,43 @@ export async function summarize(config: SumConfig, messages: string): Promise<Su
         ...config,
         ...provider,
         type: provider.type || config.type,
+        prompt: providerIndex === 0 ? config.prompt : `${config.prompt}${FALLBACK_FORMAT_GUARD}`,
       } as SumConfig;
-      const result =
+      let result =
         providerConfig.type === "gemini"
           ? await callGemini(providerConfig, messages)
           : await callOpenAI(providerConfig, messages);
+      let content = stripThinking(result.content);
+      const driftReasons = templateDriftReasons(content, config.prompt);
+      if (driftReasons.length > 0) {
+        console.warn(
+          `[sumplus] provider=${provider.name || provider.baseUrl} template drift; retrying: ${driftReasons.join(" / ")}`,
+        );
+        const repairConfig = {
+          ...providerConfig,
+          prompt: `${config.prompt}${FALLBACK_FORMAT_GUARD}\n这是格式修复任务：只重排已有内容，不新增、删除或改写事实。`,
+        };
+        const repairInput = [
+          "请把下面这份摘要严格重排为系统提示中的固定模板。",
+          "不得重新分析聊天，不得增加原文没有的信息。",
+          "",
+          "待重排摘要：",
+          content,
+        ].join("\n");
+        const repaired = providerConfig.type === "gemini"
+          ? await callGemini(repairConfig, repairInput)
+          : await callOpenAI(repairConfig, repairInput);
+        result = { ...repaired, usage: addTokenUsage(result.usage, repaired.usage) };
+        content = stripThinking(repaired.content);
+        const remainingReasons = templateDriftReasons(content, config.prompt);
+        if (remainingReasons.length > 0) {
+          throw new Error(`模板格式不合格：${remainingReasons.join(" / ")}`);
+        }
+      }
       console.info(
         `[sumplus] provider=${provider.name || provider.baseUrl} model=${provider.model} durationMs=${Date.now() - startedAt}`,
       );
 
-      const content = stripThinking(result.content);
       return {
         content,
         provider: {
