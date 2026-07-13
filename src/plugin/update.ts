@@ -47,9 +47,21 @@ function saveAutoUpdateState(state: AutoUpdateState): void {
 }
 
 // ── Git helpers ────────────────────────────────────────────────────────
+const GIT_USER_NAME = "TeleBox Auto-Update";
+const GIT_USER_EMAIL = "telebox@users.noreply.github.com";
+
+async function gitExec(args: string[]): Promise<{ stdout: string; stderr: string }> {
+  // Keep Git commands independent from machine-level identity configuration.
+  return execFileAsync("git", [
+    "-c", `user.name=${GIT_USER_NAME}`,
+    "-c", `user.email=${GIT_USER_EMAIL}`,
+    ...args,
+  ]);
+}
+
 async function getRemotes(): Promise<string[]> {
   try {
-    const { stdout } = await execFileAsync("git", ["remote"]);
+    const { stdout } = await gitExec(["remote"]);
     return stdout.trim().split("\n").filter((r) => r.trim());
   } catch {
     return [];
@@ -58,7 +70,7 @@ async function getRemotes(): Promise<string[]> {
 
 async function getBranches(): Promise<string[]> {
   try {
-    const { stdout } = await execFileAsync("git", ["branch", "-r"]);
+    const { stdout } = await gitExec(["branch", "-r"]);
     const branches = stdout
       .trim()
       .split("\n")
@@ -74,7 +86,7 @@ async function findForkMainBranch(): Promise<{ remote: string; branch: string } 
   const allRemotes = await getRemotes();
   if (!allRemotes.includes(FORK_REMOTE)) return null;
 
-  await execFileAsync("git", ["fetch", FORK_REMOTE, "--prune"]);
+  await gitExec(["fetch", FORK_REMOTE, "--prune"]);
   const branches = await getBranches();
   for (const branchName of MAIN_BRANCH_NAMES) {
     if (branches.includes(`${FORK_REMOTE}/${branchName}`)) {
@@ -110,7 +122,7 @@ async function update(force = false, msg: Api.Message) {
     await msg.edit({ text: "🔄 正在从个人维护仓库拉取最新代码..." });
 
     if (force) {
-      const { stdout: aheadStd } = await execFileAsync("git", [
+      const { stdout: aheadStd } = await gitExec([
         "rev-list",
         "--count",
         `${fullBranch}..HEAD`,
@@ -123,11 +135,11 @@ async function update(force = false, msg: Api.Message) {
       }
 
       console.log(`⚠️ 强制回滚到 ${fullBranch}...`);
-      await execFileAsync("git", ["reset", "--hard", fullBranch]);
+      await gitExec(["reset", "--hard", fullBranch]);
       await msg.edit({ text: "🔄 强制更新中..." });
     }
 
-    await execFileAsync("git", ["pull", "--ff-only", remote, branch]);
+    await gitExec(["pull", "--ff-only", remote, branch]);
     await msg.edit({ text: "🔄 已同步个人维护仓库，正在完成更新..." });
 
     console.log("\n📦 安装依赖...");
@@ -189,7 +201,7 @@ async function autoUpdateMainRepo(githubMsg: Api.Message): Promise<void> {
     }
     const { remote, branch } = branchInfo;
 
-    await execFileAsync("git", ["pull", "--ff-only", remote, branch]);
+    await gitExec(["pull", "--ff-only", remote, branch]);
     await npm_install_project_dependencies();
 
     // Success — delete status message using a fresh client, then restart silently.
