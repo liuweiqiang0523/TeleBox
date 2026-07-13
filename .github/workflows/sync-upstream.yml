@@ -15,12 +15,19 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       - name: Merge upstream/main
         run: |
@@ -33,5 +40,31 @@ jobs:
             echo "Already contains upstream/main."
             exit 0
           fi
-          git merge --no-edit upstream/main
+
+          if ! git merge --no-edit upstream/main; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            {
+              echo "## Upstream sync blocked"
+              echo
+              echo "The fork was left unchanged because these files conflict:"
+              echo '```'
+              echo "${conflicts:-unknown merge failure}"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            git merge --abort || true
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm install --no-package-lock --ignore-scripts --no-audit --no-fund
+
+      - name: Type check merged code
+        run: ./node_modules/.bin/tsc --noEmit --pretty false
+
+      - name: Push verified sync
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            echo "Fork is already up to date."
+            exit 0
+          fi
           git push origin HEAD:main

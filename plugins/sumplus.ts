@@ -232,7 +232,7 @@ function bar(score: number): string {
 function buildChatWeatherPanel(records: ChatMessageRecord[]): string {
   const count = records.length;
   const users = new Set(records.map((record) => record.senderId || record.sender).filter(Boolean)).size;
-  const text = records.map((record) => record.text || "").join("\n");
+  const text = records.map((record) => record.content || "").join("\n");
   const emojiCount = [...text].filter((char) => /[\u{1F300}-\u{1FAFF}]/u.test(char)).length;
   const questionCount = (text.match(/[?？]/g) || []).length;
   const disputeCount = (text.match(/争议|不对|不是|问题|错误|失败|修复|卡|崩|吵|骂|坑/g) || []).length;

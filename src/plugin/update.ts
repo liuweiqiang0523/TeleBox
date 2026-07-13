@@ -15,6 +15,8 @@ const prefixes = getPrefixes();
 const mainPrefix = prefixes[0];
 
 const execFileAsync = promisify(execFile);
+const FORK_REMOTE = "origin";
+const MAIN_BRANCH_NAMES = ["main", "master"];
 
 // ── Auto-update state ──────────────────────────────────────────────────
 const AUTO_UPDATE_STATE_DIR = path.join(os.homedir(), ".telebox");
@@ -68,26 +70,15 @@ async function getBranches(): Promise<string[]> {
   }
 }
 
-async function findMainBranch(): Promise<{ remote: string; branch: string } | null> {
-  const branches = await getBranches();
+async function findForkMainBranch(): Promise<{ remote: string; branch: string } | null> {
   const allRemotes = await getRemotes();
-  const mainBranchNames = ["main", "master"];
+  if (!allRemotes.includes(FORK_REMOTE)) return null;
 
-  const preferredRemotes = ["upstream", "origin"];
-  const remotes = [
-    ...preferredRemotes.filter((remote) => allRemotes.includes(remote)),
-    ...allRemotes.filter((remote) => !preferredRemotes.includes(remote)),
-  ];
-
-  for (const branchName of mainBranchNames) {
-    for (const remote of remotes) {
-      const fullBranch = `${remote}/${branchName}`;
-      if (branches.includes(fullBranch)) {
-        return { remote, branch: branchName };
-      }
-      if (branches.includes(branchName)) {
-        return { remote, branch: branchName };
-      }
+  await execFileAsync("git", ["fetch", FORK_REMOTE, "--prune"]);
+  const branches = await getBranches();
+  for (const branchName of MAIN_BRANCH_NAMES) {
+    if (branches.includes(`${FORK_REMOTE}/${branchName}`)) {
+      return { remote: FORK_REMOTE, branch: branchName };
     }
   }
 
@@ -107,19 +98,23 @@ async function update(force = false, msg: Api.Message) {
   console.log("🚀 开始更新项目...\n");
 
   try {
-    const branchInfo = await findMainBranch();
+    await msg.edit({ text: "🔄 正在检查维护仓库..." });
+    const branchInfo = await findForkMainBranch();
     if (!branchInfo) {
-      throw new Error("未找到可用的远程分支 (main/master)。请确保已配置 git remote。");
+      throw new Error("未找到 origin/main 或 origin/master，请检查 fork 远程仓库配置。");
     }
 
     const { remote, branch } = branchInfo;
     const fullBranch = `${remote}/${branch}`;
 
-    await execFileAsync("git", ["fetch", "--all"]);
-    await msg.edit({ text: "🔄 正在拉取最新代码..." });
+    await msg.edit({ text: "🔄 正在从个人维护仓库拉取最新代码..." });
 
     if (force) {
-      const { stdout: aheadStd } = await execAsync(`git rev-list --count ${fullBranch}..HEAD`);
+      const { stdout: aheadStd } = await execFileAsync("git", [
+        "rev-list",
+        "--count",
+        `${fullBranch}..HEAD`,
+      ]);
       const aheadCount = Number(aheadStd.trim() || "0");
       if (aheadCount > 0) {
         throw new Error(
@@ -132,8 +127,8 @@ async function update(force = false, msg: Api.Message) {
       await msg.edit({ text: "🔄 强制更新中..." });
     }
 
-    await execFileAsync("git", ["pull", remote, branch, "--no-rebase"]);
-    await msg.edit({ text: "🔄 正在合并最新代码..." });
+    await execFileAsync("git", ["pull", "--ff-only", remote, branch]);
+    await msg.edit({ text: "🔄 已同步个人维护仓库，正在完成更新..." });
 
     console.log("\n📦 安装依赖...");
     await msg.edit({ text: "📦 正在安装依赖..." });
@@ -155,7 +150,7 @@ async function update(force = false, msg: Api.Message) {
       `❌ 更新失败\n` +
       (errCmd ? `失败命令行：${errCmd}\n` : "") +
       `失败原因：${errDetail}\n\n` +
-      "如果是 Git 冲突，请手动解决后再更新，或使用 .update -f 强制更新（会丢弃本地改动）";
+      "更新仅从个人维护仓库 origin 获取。请先检查 GitHub Actions 的 Sync upstream；不要直接在服务器合并 upstream。";
 
     try {
       await msg.edit({ text: errorText });
@@ -188,14 +183,13 @@ async function autoUpdateMainRepo(githubMsg: Api.Message): Promise<void> {
     const targetPeerId = statusMsg.peerId;
     const targetMsgId = statusMsg.id;
 
-    const branchInfo = await findMainBranch();
+    const branchInfo = await findForkMainBranch();
     if (!branchInfo) {
-      throw new Error("未找到可用的远程分支");
+      throw new Error("未找到个人维护仓库 origin/main 或 origin/master");
     }
     const { remote, branch } = branchInfo;
 
-    await execFileAsync("git", ["fetch", "--all"]);
-    await execFileAsync("git", ["pull", remote, branch, "--no-rebase"]);
+    await execFileAsync("git", ["pull", "--ff-only", remote, branch]);
     await npm_install_project_dependencies();
 
     // Success — delete status message using a fresh client, then restart silently.
@@ -279,7 +273,7 @@ const PLUGIN_REPO_PATTERN = /new commit.*to\s+(TeleBox_Plugins|TeleBox_M_Plugins
 
 class UpdatePlugin extends Plugin {
   description: string =
-    `更新项目：拉取最新代码并安装依赖\n` +
+    `更新项目：从个人维护仓库拉取已验证代码并安装依赖\n` +
     `<code>${mainPrefix}update -f/-force</code> 强制更新\n` +
     `<code>${mainPrefix}update auto on</code> / <code>off</code> 自动更新开关（默认关闭）`;
 
@@ -292,7 +286,7 @@ class UpdatePlugin extends Plugin {
         const sub = parts[1]?.toLowerCase();
         if (sub === "on") {
           saveAutoUpdateState({ enabled: true });
-          await msg.edit({ text: "✅ 自动更新已开启\n\n检测到主仓库提交时自动 git pull + 重启，检测到插件仓库提交时自动 tpm update。" });
+          await msg.edit({ text: "✅ 自动更新已开启\n\n检测到维护仓库提交时，从 origin 快进更新并重启；插件仓库提交仍使用 tpm update。" });
           return;
         }
         if (sub === "off") {
