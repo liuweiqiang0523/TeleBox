@@ -12,6 +12,7 @@ import { safeGetReplyMessage } from "@utils/safeGetMessages";
 import { JSONFilePreset } from "lowdb/node";
 import { getPrefixes } from "@utils/pluginManager";
 import { tryGetCurrentGenerationContext, getGlobalClient } from "@utils/runtimeManager";
+import { htmlEscape } from "@utils/htmlEscape";
 
 const prefixes = getPrefixes();
 const mainPrefix = prefixes[0];
@@ -61,14 +62,6 @@ class EntityManager {
   hasReachedLimit(): boolean {
     return this.count >= this.LIMIT;
   }
-}
-
-function htmlEscape(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function codeTag(value: string): string {
@@ -1240,7 +1233,7 @@ async function showPluginRecords(msg: Api.Message, verbose?: boolean) {
   }
 }
 
-export async function updateAllPlugins(msg: Api.Message): Promise<{ failedCount: number }> {
+export async function updateAllPlugins(msg: Api.Message): Promise<{ failedCount: number; statusPeerId?: any; statusMsgId?: number }> {
   const statusMsg = await sendOrEditMessage(msg, "🔍 正在检查待更新的插件...");
   let canEdit = true;
   
@@ -1336,9 +1329,14 @@ export async function updateAllPlugins(msg: Api.Message): Promise<{ failedCount:
     }
 
     const finalText = `✅ 更新完成 (成功${updatedCount}个, 跳过${skipCount}个, 失败${failedCount}个)`;
+    // Snapshot peerId+msgId BEFORE reloadAndFinalize — loadPlugins() inside will
+    // destroy the old client, invalidating statusMsg._client. The snapshot lets
+    // the caller delete the correct message after reload.
+    const statusPeerId = statusMsg.peerId;
+    const statusMsgId = statusMsg.id;
     await reloadAndFinalize(statusMsg, finalText, { parseMode: "html" });
     console.log(`[TPM] 更新完成。统计: 成功${updatedCount}个, 跳过${skipCount}个, 失败${failedCount}个`);
-    return { failedCount };
+    return { failedCount, statusPeerId, statusMsgId };
   } catch (error) {
     console.error("[TPM] 一键更新失败:", error);
     try {
@@ -1346,7 +1344,7 @@ export async function updateAllPlugins(msg: Api.Message): Promise<{ failedCount:
     } catch (editError) {
       console.log(`[TPM] 错误消息编辑失败: ${editError}`);
     }
-    return { failedCount: 1 };
+    return { failedCount: 1, statusPeerId: statusMsg?.peerId, statusMsgId: statusMsg?.id };
   }
 }
 

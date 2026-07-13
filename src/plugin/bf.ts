@@ -15,16 +15,7 @@ import type { GenerationContext } from "@utils/generationContext";
 import { tryGetCurrentGenerationContext } from "@utils/runtimeManager";
 import { CustomFile } from "teleproto/client/uploads";
 import bigInt, { BigInteger } from "big-integer";
-
-// HTML escape utility to prevent XSS when embedding user-supplied values into HTML messages
-function htmlEscape(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+import { htmlEscape } from "@utils/htmlEscape";
 
 const prefixes = getPrefixes();
 const mainPrefix = prefixes[0];
