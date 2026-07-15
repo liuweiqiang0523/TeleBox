@@ -1614,7 +1614,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
         const caption = [
           `🖼️ ${titleForSummaryMode(mode, chatName, special?.title)}`,
           `🤖 ${summaryResult.provider.name}｜${summaryResult.provider.model}`,
-          `📥 ${fetchResult.records.length} 条｜${imageResult.pages.length} 页`,
+          `📥 ${fetchResult.records.length} 条｜单张长图`,
           `⚡ 排版 ${imageResult.renderMs}ms｜真实头像 ${imageResult.avatarCount} 个`,
         ].join("\n");
         await sendSummaryImageAlbum(client, chatId, imageResult.pages, caption);
