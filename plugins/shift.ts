@@ -586,6 +586,7 @@ const groupBuffers = new Map<
   }
 >();
 const GROUP_FORWARD_BUFFER_MS = 5000;
+const GROUP_LOOKUP_RADIUS = 12;
 const FORWARD_DEDUPE_TTL_MS = 60 * 60 * 1000;
 const forwardedDedupeKeys = new Map<string, number>();
 
@@ -625,12 +626,62 @@ function cleanupGroupBuffers(): void {
 }
 
 function getGroupKey(message: any): string | null {
-  const gid = (message as any).groupedId;
+  const gid = getGroupedId(message);
   const sid = getChatIdFromMessage(message);
   if (!gid || !sid) return null;
-  const gidStr =
-    typeof gid?.toString === "function" ? gid.toString() : String(gid);
-  return `${sid}:${gidStr}`;
+  return `${sid}:${gid}`;
+}
+
+function getGroupedId(message: any): string | null {
+  const groupedId = message?.groupedId;
+  if (!groupedId) return null;
+  return typeof groupedId?.toString === "function"
+    ? groupedId.toString()
+    : String(groupedId);
+}
+
+async function collectCompleteGroupMessages(
+  client: TelegramClient,
+  sourceId: number,
+  bufferedMessages: any[]
+): Promise<any[]> {
+  const groupId = getGroupedId(bufferedMessages[0]);
+  const bufferedById = new Map(
+    bufferedMessages.map((message) => [Number(message.id), message])
+  );
+  if (!groupId || bufferedById.size === 0) {
+    return Array.from(bufferedById.values());
+  }
+
+  const messageIds = Array.from(bufferedById.keys());
+  const minId = Math.max(1, Math.min(...messageIds) - GROUP_LOOKUP_RADIUS);
+  const maxId = Math.max(...messageIds) + GROUP_LOOKUP_RADIUS;
+  const nearbyIds = Array.from(
+    { length: maxId - minId + 1 },
+    (_, index) => minId + index
+  );
+
+  try {
+    const source = await getEntityWithHash(client, sourceId);
+    const nearbyMessages = await client.getMessages(source, { ids: nearbyIds });
+    for (const message of nearbyMessages) {
+      if (message && getGroupedId(message) === groupId) {
+        bufferedById.set(Number(message.id), message);
+      }
+    }
+  } catch (error) {
+    console.warn(`[SHIFT] 补全媒体组失败，使用已收到的消息: ${groupId}`, error);
+  }
+
+  const completeMessages = Array.from(bufferedById.values()).sort(
+    (a, b) => Number(a.id) - Number(b.id)
+  );
+  if (completeMessages.length > bufferedMessages.length) {
+    console.log(
+      `[SHIFT] 补全媒体组: ${groupId}, ${bufferedMessages.length} -> ${completeMessages.length}`
+    );
+  }
+  return completeMessages;
 }
 
 async function forwardGroupMessages(
@@ -711,9 +762,24 @@ function enqueueGroupMessage(
       const client = await getGlobalClient();
       throwIfAborted(context?.signal);
       if (existed.shouldForward) {
-        const ids = existed.messages.map((m) => Number(m.id));
         markForwarded(dedupeKey);
         try {
+          const completeMessages = await collectCompleteGroupMessages(
+            client,
+            existed.sourceId,
+            existed.messages
+          );
+          if (
+            (await Promise.all(
+              completeMessages.map((message) =>
+                isMessageFiltered(message, existed.sourceId)
+              )
+            )).some(Boolean)
+          ) {
+            console.log("[SHIFT] 媒体组包含过滤内容，跳过转发");
+            return;
+          }
+          const ids = completeMessages.map((message) => Number(message.id));
           await forwardGroupMessages(
             client,
             existed.sourceId,
