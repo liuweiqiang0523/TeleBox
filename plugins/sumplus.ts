@@ -548,27 +548,15 @@ async function editFormattedSummaryMessage(
   await msg.edit({ text, parseMode: "html" });
 }
 
-async function sendSummaryImageAlbum(
+async function sendSummaryImage(
   client: any,
   chatId: string,
   pages: Buffer[],
-  caption: string,
 ): Promise<void> {
-  const files = pages.slice(0, 10).map((page, index) => {
-    const file = page as Buffer & { name?: string };
-    file.name = `sumplus-${Date.now()}-${index + 1}.png`;
-    return file;
-  });
-  if (!files.length) throw new Error("图片渲染结果为空");
-  if (files.length === 1) {
-    await client.sendFile(chatId, { file: files[0], caption, forceDocument: false });
-    return;
-  }
-  await client.sendFile(chatId, {
-    file: files,
-    caption: files.map((_file, index) => index === 0 ? caption : ""),
-    forceDocument: false,
-  });
+  const file = pages[0] as (Buffer & { name?: string }) | undefined;
+  if (!file) throw new Error("图片渲染结果为空");
+  file.name = `sumplus-${Date.now()}.png`;
+  await client.sendFile(chatId, { file, forceDocument: false });
 }
 
 
@@ -1611,13 +1599,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
           providerName: summaryResult.provider.name,
           model: summaryResult.provider.model,
         });
-        const caption = [
-          `🖼️ ${titleForSummaryMode(mode, chatName, special?.title)}`,
-          `🤖 ${summaryResult.provider.name}｜${summaryResult.provider.model}`,
-          `📥 ${fetchResult.records.length} 条｜单张长图`,
-          `⚡ 排版 ${imageResult.renderMs}ms｜真实头像 ${imageResult.avatarCount} 个`,
-        ].join("\n");
-        await sendSummaryImageAlbum(client, chatId, imageResult.pages, caption);
+        await sendSummaryImage(client, chatId, imageResult.pages);
         await msg.delete({ revoke: true });
         return;
       } catch (imageError: any) {
