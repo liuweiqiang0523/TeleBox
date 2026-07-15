@@ -10,6 +10,7 @@ assets/*
 !assets/.gitkeep
 plugins/*
 !plugins/.gitkeep
+!plugins/sumplus.image.ts
 temp/*
 !temp/.gitkeep
 node_modules/*

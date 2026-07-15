@@ -42,6 +42,8 @@ import {
 } from "./sumplus.prepare";
 const prefixes = getPrefixes();
 const mainPrefix = prefixes[0] || ".";
+const IMAGE_MODE_TOKENS = new Set(["pic", "image", "img", "图片", "海报"]);
+const MANAGEMENT_COMMANDS = new Set(["key", "url", "model", "type", "prompt", "max", "reply", "info", "help", "menu", "modes", "玩法", "菜单", "debug", "stat", "stats", "诊断"]);
 
 // Keep individual messages and total prompt size bounded while respecting the user's requested history range.
 // We do not cap the requested message count here; only oversized pasted messages/prompts are compacted.
@@ -546,6 +548,29 @@ async function editFormattedSummaryMessage(
   await msg.edit({ text, parseMode: "html" });
 }
 
+async function sendSummaryImageAlbum(
+  client: any,
+  chatId: string,
+  pages: Buffer[],
+  caption: string,
+): Promise<void> {
+  const files = pages.slice(0, 10).map((page, index) => {
+    const file = page as Buffer & { name?: string };
+    file.name = `sumplus-${Date.now()}-${index + 1}.png`;
+    return file;
+  });
+  if (!files.length) throw new Error("图片渲染结果为空");
+  if (files.length === 1) {
+    await client.sendFile(chatId, { file: files[0], caption, forceDocument: false });
+    return;
+  }
+  await client.sendFile(chatId, {
+    file: files,
+    caption: files.map((_file, index) => index === 0 ? caption : ""),
+    forceDocument: false,
+  });
+}
+
 
 function toInt(value: unknown, fallback: number): number {
   const n = Number(value);
@@ -990,6 +1015,9 @@ function isSumSelfNoiseRecord(record: ChatMessageRecord): boolean {
 
   if (
     content === "⏳ 正在读取消息并生成摘要..." ||
+    content === "⏳ 正在读取消息并生成图片摘要..." ||
+    content === "🎨 正在获取头像并排版..." ||
+    content.startsWith("⚠️ 图片生成失败，已回退文字摘要") ||
     content.startsWith("❌ 摘要失败") ||
     content.startsWith("没有找到可总结的文本消息")
   ) {
@@ -1253,8 +1281,14 @@ function buildDebugText(params: {
 
 async function handleCommand(msg: Api.Message): Promise<void> {
   const raw = msg.message || "";
-  const parts = raw.trim().split(/\s+/);
-  const [, sub, ...args] = parts;
+  const rawParts = raw.trim().split(/\s+/);
+  const commandArgs = rawParts.slice(1);
+  const rawSub = String(commandArgs[0] || "").toLowerCase();
+  const imageMode = !MANAGEMENT_COMMANDS.has(rawSub) && commandArgs.some((item) => IMAGE_MODE_TOKENS.has(item.toLowerCase()));
+  const effectiveArgs = imageMode
+    ? commandArgs.filter((item) => !IMAGE_MODE_TOKENS.has(item.toLowerCase()))
+    : commandArgs;
+  const [sub, ...args] = effectiveArgs;
   const db = await getDB();
 
   try {
@@ -1426,7 +1460,7 @@ async function handleCommand(msg: Api.Message): Promise<void> {
     const range = resolveRangeToken(request.rangeToken);
     const chatId = String(msg.chatId);
 
-    await msg.edit({ text: "⏳ 正在读取消息并生成摘要..." });
+    await msg.edit({ text: imageMode ? "⏳ 正在读取消息并生成图片摘要..." : "⏳ 正在读取消息并生成摘要..." });
 
     const mode: SumMode = special?.mode || (request.target ? "person" : "summary");
     const isPersonAnalysis = mode === "person";
@@ -1560,6 +1594,38 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       specialTitle: special?.title,
       includeWeather: mode === "summary",
     });
+
+    if (imageMode) {
+      const client = await getGlobalClient();
+      if (!client) throw new Error("Telegram 客户端未初始化");
+      try {
+        await msg.edit({ text: "🎨 正在获取头像并排版..." });
+        const { renderSummaryImages } = await import("./sumplus.image");
+        const imageResult = await renderSummaryImages({
+          client,
+          chatName,
+          title: titleForSummaryMode(mode, chatName, special?.title),
+          mode,
+          summary: decoratedContent,
+          records: fetchResult.records,
+          providerName: summaryResult.provider.name,
+          model: summaryResult.provider.model,
+        });
+        const caption = [
+          `🖼️ ${titleForSummaryMode(mode, chatName, special?.title)}`,
+          `🤖 ${summaryResult.provider.name}｜${summaryResult.provider.model}`,
+          `📥 ${fetchResult.records.length} 条｜${imageResult.pages.length} 页`,
+          `⚡ 排版 ${imageResult.renderMs}ms｜真实头像 ${imageResult.avatarCount} 个`,
+        ].join("\n");
+        await sendSummaryImageAlbum(client, chatId, imageResult.pages, caption);
+        await msg.delete({ revoke: true });
+        return;
+      } catch (imageError: any) {
+        console.warn("[sumplus] image render failed, falling back to text:", imageError?.message || imageError);
+        await msg.edit({ text: "⚠️ 图片生成失败，已回退文字摘要..." });
+      }
+    }
+
     const result = formatCardForTelegram(decoratedContent, mentionLinks);
     const quoteResult = true;
 
@@ -1625,6 +1691,11 @@ const menuText = `📚 <b>SumPlus 模式菜单</b>
 <code>${mainPrefix}sum debug 24h</code> - 抓取量 / 采样 / 线路
 <code>${mainPrefix}sum debug 12h @username</code> - 人物匹配条数
 
+🖼️ <b>图片模式</b>
+<code>${mainPrefix}sum day pic</code> - 日报图片
+<code>${mainPrefix}sum roast 24h pic</code> - 槽点图片
+任意摘要命令末尾加 <code>pic</code>，即可输出可转发图片。
+
 💡 <b>小提示</b>
 中文别名可用：<code>热梗</code>、<code>吃瓜</code>、<code>吐槽</code>、<code>金句</code>、<code>关系</code>、<code>剧情</code>、<code>对比</code>、<code>追踪</code>、<code>嗑糖</code>、<code>抽象</code>、<code>颁奖</code>、<code>情绪</code>、<code>职业</code>。
 时间可写：<code>30m</code>、<code>6h</code>、<code>24h</code>、<code>day</code>、<code>week</code>。`
@@ -1651,6 +1722,7 @@ const helpText = `▎聊天摘要
 <code>${mainPrefix}sum award 24h</code> - 群聊颁奖典礼
 <code>${mainPrefix}sum mood 24h</code> - 群聊情绪天气
 <code>${mainPrefix}sum npc 24h</code> - 群友 RPG 职业分配
+<code>${mainPrefix}sum day pic</code> - 图片版日报；其他模式同样可在末尾加 pic
 <code>${mainPrefix}sum debug 24h</code> - 只看抓取/采样/线路诊断，不调用模型
 
 长时间范围会自动分页抓取并按时间分段；人物分析会优先精确匹配 @用户名 / 用户ID / 昵称，并使用历史身份缓存辅助匹配。
