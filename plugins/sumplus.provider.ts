@@ -160,6 +160,74 @@ type ModelCallResult = {
   usage?: TokenUsage;
 };
 
+export type ShortReplyResult = {
+  content: string;
+  provider: ProviderUseInfo;
+  usage?: TokenUsage;
+};
+
+/**
+ * Generate a short conversational reply while reusing SumPlus' configured
+ * provider chain. Unlike summarize(), this deliberately skips summary-template
+ * validation and repair because the caller needs ordinary chat text.
+ */
+export async function generateShortReply(
+  config: SumConfig,
+  systemPrompt: string,
+  message: string,
+): Promise<ShortReplyResult> {
+  const providers = [
+    {
+      name: config.name || "主线路",
+      type: config.type,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      model: config.model,
+      stream: config.stream,
+    },
+    ...(config.fallbacks || []),
+  ];
+  const errors: string[] = [];
+
+  for (const provider of providers) {
+    if (!provider.apiKey) continue;
+    const providerConfig = {
+      ...config,
+      ...provider,
+      type: provider.type || config.type,
+      prompt: systemPrompt,
+      maxOutputLength: 220,
+      stream: false,
+    } as SumConfig;
+
+    try {
+      const result = providerConfig.type === "gemini"
+        ? await callGemini(providerConfig, message)
+        : await callOpenAI(providerConfig, message);
+      const content = stripThinking(result.content).trim();
+      if (!content) throw new Error("模型返回空回复");
+      console.info(`[autoreply-ai] provider=${provider.name || provider.baseUrl} model=${provider.model}`);
+      return {
+        content,
+        provider: {
+          name: provider.name || provider.baseUrl,
+          type: providerConfig.type,
+          baseUrl: provider.baseUrl,
+          model: provider.model,
+        },
+        usage: result.usage,
+      };
+    } catch (error: any) {
+      const name = provider.name || provider.baseUrl;
+      const reason = error?.response?.data?.error?.message || error?.message || String(error);
+      errors.push(`${name}: ${reason}`);
+      console.warn(`[autoreply-ai] provider=${name} failed: ${reason}`);
+    }
+  }
+
+  throw new Error(errors.join(" | ") || "没有可用的 SumPlus API 线路");
+}
+
 const FALLBACK_FORMAT_GUARD = `
 
 【供应商通用格式守卫】

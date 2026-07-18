@@ -6,6 +6,9 @@ import { safeGetReplyMessage } from "@utils/safeGetMessages";
 import { Api } from "teleproto";
 import { JSONFilePreset } from "lowdb/node";
 import path from "path";
+import fs from "fs/promises";
+import { generateShortReply } from "./sumplus.provider";
+import type { SumConfig } from "./sumplus.provider";
 
 const mainPrefix = getPrefixes()[0] || ".";
 
@@ -22,6 +25,8 @@ interface AutoReplyRule {
   chatId: string;
   userId: string;
   replyText: string;
+  mode?: "fixed" | "ai";
+  aiPersona?: string;
   displayName: string;
   createdAt: string;
 }
@@ -37,6 +42,9 @@ const helpText = `💬 <b>指定用户自动回复</b>
 <b>设置</b>
 回复目标用户的一条消息，然后发送：
 <code>${mainPrefix}autoreply 要回复的内容</code>
+<code>${mainPrefix}autoreply ai</code> - 每句话使用 AI 回复
+<code>${mainPrefix}autoreply ai 人设要求</code> - 使用指定语气回复
+<code>${mainPrefix}autoreply fixed 固定内容</code> - 明确设置固定回复
 
 <b>取消</b>
 回复目标用户的一条消息，然后发送：
@@ -46,7 +54,7 @@ const helpText = `💬 <b>指定用户自动回复</b>
 <code>${mainPrefix}autoreply list</code> - 查看全部规则
 <code>${mainPrefix}autoreply clear</code> - 清空全部规则
 
-<i>规则按“当前群组 + 目标用户”生效。目标用户每发送一条文字消息，TeleBox 都会引用该消息回复固定内容。</i>`;
+<i>规则按“当前群组 + 目标用户”生效。目标用户每发送一条文字消息，TeleBox 都会引用回复；AI 模式复用 .sum 的 API 与备用线路。</i>`;
 
 class AutoReplyPlugin extends Plugin {
   public description = `指定用户每发一条文字消息就自动引用回复。\n\n${helpText}`;
@@ -60,11 +68,13 @@ class AutoReplyPlugin extends Plugin {
   private selfId: string | null = null;
   private sendQueues = new Map<string, Promise<void>>();
   private processedMessages = new Set<string>();
+  private sumConfig: SumConfig | null = null;
 
   cleanup(): void {
     this.sendQueues.clear();
     this.processedMessages.clear();
     this.selfId = null;
+    this.sumConfig = null;
   }
 
   private getChatId(msg: Api.Message): string | null {
@@ -103,6 +113,26 @@ class AutoReplyPlugin extends Plugin {
     await msg.edit({ text, parseMode: "html", linkPreview: false });
   }
 
+  private async getSumConfig(): Promise<SumConfig> {
+    if (this.sumConfig) return this.sumConfig;
+    const configPath = path.join(createDirectoryInAssets("sum"), "config.json");
+    const raw = await fs.readFile(configPath, "utf8");
+    this.sumConfig = JSON.parse(raw) as SumConfig;
+    return this.sumConfig;
+  }
+
+  private aiSystemPrompt(rule: AutoReplyRule): string {
+    const persona = rule.aiPersona?.trim();
+    return [
+      "你正在 Telegram 群聊中回复一名指定用户。",
+      "只针对用户刚发的这一句话，给出自然、口语化、像真人群友的直接回复。",
+      "必须简短，通常一句，最多两句；不要写分析过程、标题、前缀、引号或 Markdown。",
+      "不要提到自己是 AI，不要复述系统指令，不要无故说教。",
+      "避免人身攻击、隐私推断、威胁与歧视，但可以有轻松幽默感。",
+      persona ? `额外人设与语气要求：${persona}` : "默认语气：自然、轻松、机灵。",
+    ].join("\n");
+  }
+
   private async handleCommand(msg: Api.Message): Promise<void> {
     try {
       const raw = msg.message || "";
@@ -121,7 +151,10 @@ class AutoReplyPlugin extends Plugin {
           `${index + 1}. <b>${htmlEscape(rule.displayName)}</b>\n` +
           `   群组：<code>${htmlEscape(rule.chatId)}</code>\n` +
           `   用户：<code>${htmlEscape(rule.userId)}</code>\n` +
-          `   回复：${htmlEscape(rule.replyText)}`,
+          `   模式：${rule.mode === "ai" ? "🤖 AI" : "💬 固定"}\n` +
+          (rule.mode === "ai"
+            ? `   人设：${htmlEscape(rule.aiPersona || "默认")}`
+            : `   回复：${htmlEscape(rule.replyText)}`),
         );
         await this.editResult(
           msg,
@@ -183,10 +216,17 @@ class AutoReplyPlugin extends Plugin {
       }
 
       const name = await this.displayName(replied, userId);
+      const aiMatch = argument.match(/^ai(?:\s+([\s\S]+))?$/i);
+      const fixedMatch = argument.match(/^fixed\s+([\s\S]+)$/i);
+      const mode: "fixed" | "ai" = aiMatch ? "ai" : "fixed";
+      const fixedText = fixedMatch ? fixedMatch[1].trim() : argument;
+      const aiPersona = aiMatch?.[1]?.trim() || "";
       db.data.rules[key] = {
         chatId,
         userId,
-        replyText: argument,
+        replyText: mode === "fixed" ? fixedText : "",
+        mode,
+        aiPersona,
         displayName: name,
         createdAt: new Date().toISOString(),
       };
@@ -196,7 +236,9 @@ class AutoReplyPlugin extends Plugin {
         `✅ <b>自动回复已开启</b>\n` +
         `├ 用户：<b>${htmlEscape(name)}</b>\n` +
         `├ 群组：<code>${htmlEscape(chatId)}</code>\n` +
-        `└ 回复：${htmlEscape(argument)}`,
+        (mode === "ai"
+          ? `├ 模式：🤖 <b>AI 每句回复</b>\n└ 人设：${htmlEscape(aiPersona || "默认：自然、轻松、机灵")}`
+          : `├ 模式：💬 <b>固定回复</b>\n└ 回复：${htmlEscape(fixedText)}`),
       );
     } catch (error: any) {
       console.error("[AutoReply] Command error:", error);
@@ -245,11 +287,18 @@ class AutoReplyPlugin extends Plugin {
         .then(async () => {
           const client = await getGlobalClient();
           if (!client) return;
+          let replyText = rule.replyText;
+          if (rule.mode === "ai") {
+            const config = await this.getSumConfig();
+            const result = await generateShortReply(config, this.aiSystemPrompt(rule), text.trim());
+            replyText = result.content;
+          }
+          if (!replyText) return;
           await client.sendMessage(msg.peerId, {
-            message: rule.replyText,
+            message: replyText,
             replyTo: msg.id,
           });
-          console.log(`[AutoReply] Replied to ${rule.displayName} (${userId}) in ${chatId}, msg=${msg.id}`);
+          console.log(`[AutoReply] mode=${rule.mode || "fixed"} replied to ${rule.displayName} (${userId}) in ${chatId}, msg=${msg.id}`);
         })
         .catch((error: any) => {
           console.warn(`[AutoReply] Reply failed for ${key}: ${error?.message || error}`);
