@@ -123,6 +123,22 @@ async function update(force = false, msg: Api.Message) {
     await msg.edit({ text: "🔄 正在从个人维护仓库拉取最新代码..." });
 
     if (force) {
+      const { stdout: dirtyStd } = await gitExec([
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+      ]);
+      const dirtyFiles = dirtyStd
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (dirtyFiles.length > 0) {
+        const preview = dirtyFiles.slice(0, 10).join("\n");
+        throw new Error(
+          `检测到 ${dirtyFiles.length} 个未提交的受控文件改动，已阻止强制更新，避免覆盖服务器维护内容：\n${preview}`
+        );
+      }
+
       const { stdout: aheadStd } = await gitExec([
         "rev-list",
         "--count",
