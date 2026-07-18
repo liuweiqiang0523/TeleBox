@@ -6,16 +6,24 @@ import { readAppName } from "./teleboxInfoHelper";
 import { logger } from "./logger";
 import { initializeClientSession } from "./loginManager";
 
-// ── Fix teleproto main-DC media upload deadlock ────────────────────────────
-// teleproto (through 1.228.0) still routes upload.SaveFilePart through a
-// separate media sender even when the target is the account's main DC. On
-// affected sessions that media sender's auth is rejected and every part waits
-// through all scheduler deadlines, while the exact same SaveFilePart succeeds
-// immediately through the already-authorized main sender.
+// ── Fix teleproto main-DC media upload deadlock (upstream #24 still open) ──
+// teleproto through 1.228.2 still routes upload.SaveFilePart via MediaScheduler's
+// media sender even when dcId === session.dcId. On affected sessions that path
+// burns requestRetries × deadline while client.invoke(SaveFilePart) succeeds.
+//
+// Already covered by upstream (no TeleBox patch):
+//   - ≥1.228.0 TCP keepalive / setNoDelay (no CustomPromisedNetSockets)
+//   - 1.228.1 #25 download AbortSignal/requestTimeout; #28 keepAliveInterval
+//   - 1.228.2 #26 partial: drop CHANNEL_PRIVATE / CHANNEL_INVALID /
+//     PERSISTENT_TIMESTAMP_INVALID (NOT OUTDATED / HISTORY_GET_FAILED)
+//
+// Still required:
+//   - this main-DC savePart short-circuit (#24 open)
+//   - channelGapBreaker for PERSISTENT_TIMESTAMP_OUTDATED / HISTORY_GET_FAILED
+//     (1.228.2 still infinite-retries those in UpdateManager.fetchChannelDifference)
 //
 // Route only main-DC uploads through client.invoke(). Non-main DC operations
 // retain the native MediaScheduler path (including migration/retry logic).
-// This is a TeleBox runtime hook; the npm dependency remains untouched.
 // ───────────────────────────────────────────────────────────────────────────
 (function patchMainDcMediaUpload() {
   try {
@@ -110,8 +118,8 @@ async function createClient(): Promise<TelegramClient> {
     console.log("使用代理连接 Telegram:", proxy);
   }
 
-  // teleproto ≥1.228.0 enables TCP keepalive + setNoDelay natively in
-  // PromisedNetSockets (hardcoded 30s). No CustomPromisedNetSockets needed.
+  // teleproto ≥1.228.0 enables TCP keepalive + setNoDelay natively;
+  // 1.228.1 adds keepAliveInterval option (#28). No CustomPromisedNetSockets needed.
   // Keep proxy.timeout default so SOCKS connect doesn't hang forever.
   if (proxy && !proxy.timeout) {
     proxy.timeout = 10; // seconds
@@ -206,14 +214,15 @@ async function resolvePendingSwitchNotification(
     if (!notification || notification.target !== currentVersion) return;
 
     const icon = currentVersion === "teleproto" ? "🟦" : "🟧";
-    const label = currentVersion === "teleproto" ? "TeleBox Classic" : "TeleBox-Next";
-    const other = currentVersion === "teleproto" ? "TeleBox-Next" : "TeleBox Classic";
+    const label = currentVersion === "teleproto" ? "TeleBox" : "TeleBox-Next";
+    const other = currentVersion === "teleproto" ? "TeleBox-Next" : "TeleBox";
     const summary = notification.summary ? `\n\n${notification.summary}` : "";
+    // Plain text — msg.edit often has no Markdown parseMode
     const text =
-      `🎉 **切换完成**\n\n` +
-      `现在运行：${icon} **${label}**` +
+      `🎉 切换完成\n\n` +
+      `现在运行：${icon} ${label}` +
       summary +
-      `\n\n再切回去：发 \`.switch go\`（会切到 ${other}）。`;
+      `\n\n再切回去：发 .switch go（会切到 ${other}）。`;
 
     await client.editMessage(notification.chatId, {
       message: notification.msgId,
@@ -245,6 +254,30 @@ async function startFreshRuntime(): Promise<TeleBoxRuntime> {
     // 切换后上线后，编辑之前留下的"正在切换…"通知消息
     await resolvePendingSwitchNotification(runtime.client, "teleproto");
     void flushPendingStatusDeletes().catch((e) => console.warn("[RUNTIME] pending status deletes:", e));
+    // Apply ✅ reactions queued by auto-update BEFORE the restart — now that the
+    // new runtime is fully online (equivalent to the manual-update summary).
+    void (async () => {
+      try {
+        const mod = require("../plugin/update") as {
+          flushPendingReactions?: () => Promise<void>;
+        };
+        await mod.flushPendingReactions?.();
+      } catch (e) {
+        console.warn("[RUNTIME] pending reactions:", e);
+      }
+    })();
+    // Resume autofix steps 4-5 (update plugins + summary) if a fix was in
+    // progress before the restart.
+    void (async () => {
+      try {
+        const mod = require("../plugin/autofix") as {
+          resumeAutofix?: () => Promise<void>;
+        };
+        await mod.resumeAutofix?.();
+      } catch (e) {
+        console.warn("[RUNTIME] resume autofix:", e);
+      }
+    })();
     runtime.state = "running";
     return runtime;
   } catch (error) {

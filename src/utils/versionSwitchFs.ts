@@ -94,6 +94,11 @@ function mergeTree(sourceRoot: string, targetRoot: string): void {
   }
 }
 
+/**
+ * Copy one plugin package into the flat plugins/ dir.
+ * Multi-file packages (e.g. openlist + sanitizeFileName.ts companion) copy ALL
+ * .ts files from the package directory — not only <name>/<name>.ts.
+ */
 export async function installMatchedPlugins(options: {
   matches: MatchedPlugin[];
   targetPluginRepo: string;
@@ -107,20 +112,40 @@ export async function installMatchedPlugins(options: {
   try {
     for (const match of options.matches) {
       assertPluginName(match.name);
-      const source = path.join(
-        options.targetPluginRepo,
-        match.name,
-        `${match.name}.ts`,
-      );
+      const pkgDir = path.join(options.targetPluginRepo, match.name);
+      const source = path.join(pkgDir, `${match.name}.ts`);
       if (!fs.existsSync(source)) {
         throw new Error(`Target-native plugin implementation not found: ${source}`);
       }
-      const targetFile = path.join(options.targetPluginsDir, `${match.name}.ts`);
-      const backupFile = path.join(options.backupRoot, `${match.name}.ts`);
-      const targetExisted = fs.existsSync(targetFile);
-      if (targetExisted) atomicCopy(targetFile, backupFile);
-      entries.push({ name: match.name, targetFile, backupFile, targetExisted });
-      atomicCopy(source, targetFile);
+
+      // Main entry
+      const filesToCopy: string[] = [`${match.name}.ts`];
+      // Companion modules in the same package (openlist/sanitizeFileName.ts etc.)
+      try {
+        for (const f of fs.readdirSync(pkgDir)) {
+          if (!f.endsWith(".ts")) continue;
+          if (f === `${match.name}.ts`) continue;
+          // skip tests
+          if (f.endsWith(".test.ts") || f.endsWith(".spec.ts")) continue;
+          filesToCopy.push(f);
+        }
+      } catch { /* ignore */ }
+
+      for (const fileName of filesToCopy) {
+        const srcFile = path.join(pkgDir, fileName);
+        const targetFile = path.join(options.targetPluginsDir, fileName);
+        const backupFile = path.join(options.backupRoot, fileName);
+        const targetExisted = fs.existsSync(targetFile);
+        if (targetExisted) atomicCopy(targetFile, backupFile);
+        // Journal every written file so rollback restores companions too
+        entries.push({
+          name: fileName.endsWith(".ts") ? fileName.slice(0, -3) : fileName,
+          targetFile,
+          backupFile,
+          targetExisted,
+        });
+        atomicCopy(srcFile, targetFile);
+      }
     }
   } catch (error) {
     restoreInstalledPlugins({ entries });
@@ -137,6 +162,9 @@ export function restoreInstalledPlugins(journal: InstalledPluginJournal): void {
   }
 }
 
+/** Plugin asset dirs that must NOT be merged across editions (API-incompatible). */
+export const SKIP_PLUGIN_DATA_MIGRATION = new Set(["kitt"]);
+
 export function executePluginDataMigration(options: {
   plugins: string[];
   sourceAssetsRoot: string;
@@ -149,6 +177,10 @@ export function executePluginDataMigration(options: {
   try {
     for (const plugin of [...new Set(options.plugins)].sort()) {
       assertPluginName(plugin);
+      if (SKIP_PLUGIN_DATA_MIGRATION.has(plugin)) {
+        console.log(`[switch] skip asset migration for system/incompatible plugin: ${plugin}`);
+        continue;
+      }
       const sourceDir = path.join(options.sourceAssetsRoot, plugin);
       if (!fs.existsSync(sourceDir)) continue;
       const targetDir = path.join(options.targetAssetsRoot, plugin);

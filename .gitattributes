@@ -1,1 +1,3 @@
 plugins/sum.ts merge=ours
+
+src/plugin/update.ts merge=ours

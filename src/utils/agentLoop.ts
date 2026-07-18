@@ -177,8 +177,16 @@ async function runAgent(input: AgentInput): Promise<RunAgentResult> {
   let usage;
   const callCounts = /* @__PURE__ */ new Map();
   let lastObservation = "";
+  const throwIfAborted = () => {
+    if (runtime.signal?.aborted) {
+      const reason = runtime.signal.reason;
+      throw reason instanceof Error ? reason : new Error("任务已中断（插件重载或取消）");
+    }
+  };
   for (let step = 1; step <= runtime.maxSteps; step += 1) {
+    throwIfAborted();
     await input.onStep?.(step);
+    throwIfAborted();
     const turn = await callModel(
       runtime.provider,
       messages as ChatMessage[],
@@ -213,6 +221,7 @@ async function runAgent(input: AgentInput): Promise<RunAgentResult> {
     }
     messages.push({ role: "assistant", content: turn.text, toolCalls: selectedCalls });
     for (const call of selectedCalls) {
+      throwIfAborted();
       const key = fingerprint(call);
       const count = (callCounts.get(key) || 0) + 1;
       callCounts.set(key, count);
@@ -227,6 +236,7 @@ async function runAgent(input: AgentInput): Promise<RunAgentResult> {
       messages.push(toolResultMessage(call, result.ok, result.content));
     }
   }
+  throwIfAborted();
   await input.onStep?.(runtime.maxSteps);
   messages.push({
     role: "user",
@@ -477,8 +487,10 @@ ${truncate2(firstLine, 220)}`;
   build(): string {
     const displayName = tgEscape(redactText(this.displayName, this.provider));
     const model = tgEscape(redactText(this.provider!.model, this.provider!));
+    // Always bold title: 🤖TeleBox(-Next) Agent (custom zn_name overrides brand text)
+    const titleLabel = displayName || "TeleBox Agent";
     const sections = [
-      displayName ? `${renderSharedAiIcon(this.icon)} <b>${displayName}</b>` : renderSharedAiIcon(this.icon)
+      `<b>${renderSharedAiIcon(this.icon)}${titleLabel}</b>`
     ];
     if (this.request) {
       sections.push(

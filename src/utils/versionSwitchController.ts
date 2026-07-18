@@ -48,7 +48,11 @@ import {
   PEER_DIR_NAME,
   isRunnableRepo,
 } from "./versionSwitchPaths";
-import { SwitchProgressReporter } from "./versionSwitchProgress";
+import {
+  SwitchProgressReporter,
+  markSwitchInProgress,
+  clearSwitchInProgress,
+} from "./versionSwitchProgress";
 import fs from "fs";
 import path from "path";
 
@@ -159,10 +163,35 @@ function listTargetNativePluginNames(pluginRepo: string): string[] {
   for (const entry of fs.readdirSync(pluginRepo, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     if (entry.name === "outdated" || entry.name === "scripts" || entry.name.startsWith(".")) continue;
-    const impl = path.join(pluginRepo, entry.name, `${entry.name}.ts`);
-    if (fs.existsSync(impl)) names.push(entry.name);
+    const dir = path.join(pluginRepo, entry.name);
+    const impl = path.join(dir, `${entry.name}.ts`);
+    // Standard plugin package: <name>/<name>.ts
+    if (fs.existsSync(impl)) {
+      names.push(entry.name);
+      continue;
+    }
+    // Companion / helper package: directory with any .ts (e.g. sanitizeFileName)
+    // used by multi-file plugins; must be migratable even without plugins.json entry.
+    try {
+      const hasTs = fs.readdirSync(dir).some((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
+      if (hasTs) names.push(entry.name);
+    } catch { /* ignore */ }
   }
   return names;
+}
+
+
+/** Built into src/plugin — never install from plugin repo or migrate user copy. */
+const SYSTEM_PROVIDED_PLUGINS = new Set(["kitt"]);
+
+function dropUserSpaceSystemPlugins(repoRoot: string): void {
+  for (const name of SYSTEM_PROVIDED_PLUGINS) {
+    const userFile = path.join(repoRoot, "plugins", `${name}.ts`);
+    if (fs.existsSync(userFile)) {
+      fs.rmSync(userFile, { force: true });
+      console.log(`[controller] removed user-space ${name}.ts (now a system plugin)`);
+    }
+  }
 }
 
 function runSessionConvert(source: "teleproto" | "mtcute", target: "teleproto" | "mtcute"): void {
@@ -231,6 +260,7 @@ async function main(): Promise<void> {
 
   // Live progress on the original .switch go message (works after PM2 stop)
   progress = new SwitchProgressReporter(source, target);
+  markSwitchInProgress({ source, target, reason: "controller" });
   await progress.init();
   await progress.set("layout", "running", `准备 ${PEER_DIR_NAME[target]}…`);
 
@@ -238,6 +268,12 @@ async function main(): Promise<void> {
   try {
     const targetRoot = prepareEdition(target);
     REPO_ROOTS = { ...REPO_ROOTS, [target]: targetRoot };
+    // Seed config.json onto fresh clones ASAP (api_id/hash from source) — zero-config
+    try {
+      ensureEditionConfig(target, source);
+    } catch (e) {
+      console.warn("[controller] early config seed deferred:", e);
+    }
     // Source must remain resolvable
     try {
       const srcRoot = prepareEdition(source);
@@ -296,12 +332,18 @@ async function main(): Promise<void> {
   const sourceInstalled = listInstalledPlugins(source);
   const targetPluginRepo = PLUGIN_INDEX_PATHS[target].replace(/\/plugins\.json$/, "");
   const targetAvailable = listTargetNativePluginNames(targetPluginRepo);
-  const { install, unavailable } = matchPlugins(
+  const matched = matchPlugins(
     sourceInstalled,
     sourceIndex,
     targetIndex,
     targetAvailable,
   );
+  // kitt (and similar) ship as system plugins — do not install/archive user copies
+  // or merge their assets (see SKIP_PLUGIN_DATA_MIGRATION).
+  const install = matched.install.filter((m) => !SYSTEM_PROVIDED_PLUGINS.has(m.name));
+  const unavailable = matched.unavailable.filter((n) => !SYSTEM_PROVIDED_PLUGINS.has(n));
+  dropUserSpaceSystemPlugins(REPO_ROOTS[source]);
+  dropUserSpaceSystemPlugins(REPO_ROOTS[target]);
 
   const txId = state.pendingTransaction ?? String(Date.now());
   const backupRoot = path.join(DEFAULT_SWITCH_HOME, "backups", txId);
@@ -385,16 +427,10 @@ async function main(): Promise<void> {
     preSwitchState.pendingTransaction = null;
     // Attach migration summary for the post-switch notification
     if (preSwitchState.pendingNotification) {
-      const lines = [
-        `插件：已同步 ${install.length} 个`,
-        archivedCount > 0
-          ? `仅当前版本有的插件：已保存 ${archivedCount} 个 → ~/.telebox-switch/archives/`
-          : "仅当前版本有的插件：无",
-        "配置：已把 assets 里的插件配置合并到目标版本",
-      ];
+      // Final summary (paths + unmatched plugin names) is written after nest.
       preSwitchState.pendingNotification = {
         ...preSwitchState.pendingNotification,
-        summary: lines.join("\n"),
+        summary: `插件：已同步 ${install.length} 个（详情见完成后的结果）`,
       };
     }
     saveSwitchState(preSwitchState, DEFAULT_SWITCH_HOME);
@@ -410,8 +446,32 @@ async function main(): Promise<void> {
       if (target === "mtcute") clearSwitchSessionMarker(target);
     }
 
+    // Critical: we are about to stop the source bot. This controller MUST already
+    // be outside the bot's process tree (spawned via setsid). Write a heartbeat
+    // so operators can see we reached pre-stop even if the next log never flushes.
+    console.log(
+      `[controller] Pre-stop checkpoint: source=${PM2_NAMES[source]} target=${PM2_NAMES[target]} pid=${process.pid}`,
+    );
+    try {
+      fs.writeFileSync(
+        path.join(DEFAULT_SWITCH_HOME, "controller.alive"),
+        JSON.stringify({ pid: process.pid, at: Date.now(), phase: "pre-stop" }),
+        { mode: 0o600 },
+      );
+    } catch { /* ignore */ }
+
+    // Prefer delete+recreate later for target; for source use stop.
+    // Note: `pm2 stop` with kill_tree will kill children of the bot — controller
+    // must not be a child (see spawnTsxDetached setsid).
     pm2("stop", PM2_NAMES[source]);
     console.log(`[controller] Stopped ${source} (${PM2_NAMES[source]})`);
+    try {
+      fs.writeFileSync(
+        path.join(DEFAULT_SWITCH_HOME, "controller.alive"),
+        JSON.stringify({ pid: process.pid, at: Date.now(), phase: "post-stop" }),
+        { mode: 0o600 },
+      );
+    } catch { /* ignore */ }
     await progress.set("stop", "done", "源 bot 已离线，后续由目标版完成通知");
 
     // Flatten → nested: move live edition into home/telebox-xx after process stopped
@@ -471,7 +531,54 @@ async function main(): Promise<void> {
 
     console.log(`[controller] ✅ Switch complete: ${source} → ${target}`);
     await progress.set("ready", "done", "已上线");
+
+    // Final user-facing summary: unmatched plugins + edition directories (post-nest)
+    try {
+      const finalState = loadSwitchState(DEFAULT_SWITCH_HOME);
+      if (finalState.pendingNotification) {
+        const sourceLabel = source === "teleproto" ? "TeleBox" : "TeleBox-Next";
+        const targetLabel = target === "teleproto" ? "TeleBox" : "TeleBox-Next";
+        const maxList = 40;
+        let unmatchedBlock: string;
+        if (unavailable.length === 0) {
+          unmatchedBlock = "无（全部已匹配迁移）";
+        } else {
+          const shown = unavailable.slice(0, maxList);
+          const more =
+            unavailable.length > maxList
+              ? `\n…另有 ${unavailable.length - maxList} 个`
+              : "";
+          unmatchedBlock =
+            shown.map((n) => `• ${n}`).join("\n") + more;
+        }
+        const lines = [
+          "—— 切换结果 ——",
+          "",
+          "1) 未迁移成功的插件（目标版无对应项，已归档）：",
+          unmatchedBlock,
+          archivedCount > 0 ? `归档目录：${archiveRoot}` : "",
+          "",
+          `2) 原版本（${sourceLabel}）目录：`,
+          REPO_ROOTS[source],
+          "",
+          `3) 现在运行（${targetLabel}）目录：`,
+          REPO_ROOTS[target],
+          "",
+          `插件已同步：${install.length} 个`,
+        ].filter((line) => line !== "");
+        finalState.pendingNotification = {
+          ...finalState.pendingNotification,
+          summary: lines.join("\n"),
+        };
+        saveSwitchState(finalState, DEFAULT_SWITCH_HOME);
+        console.log("[controller] Wrote final switch summary for notification");
+      }
+    } catch (e) {
+      console.warn("[controller] Failed to write final switch summary:", e);
+    }
+
     await progress.done("目标版本已上线，正在完成最终通知…");
+    clearSwitchInProgress();
     await progress.close();
   } catch (err) {
     console.error("[controller] Switch failed, rolling back...", err);
@@ -507,8 +614,105 @@ async function main(): Promise<void> {
     try {
       await progress?.close();
     } catch { /* ignore */ }
+    clearSwitchInProgress();
     process.exit(1);
   }
+}
+
+/**
+ * Fresh clones under runtime home (e.g. telebox/telebox-next) have no config.json.
+ * Zero-config switch: seed api_id/api_hash (and optional proxy) from the source
+ * edition or any known sibling install so the user never hand-copies credentials.
+ */
+function readJsonConfig(file: string): Record<string, unknown> | null {
+  try {
+    if (!fs.existsSync(file)) return null;
+    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    return raw as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function findSeedConfig(preferVersion?: "teleproto" | "mtcute"): Record<string, unknown> | null {
+  const candidates: string[] = [];
+  if (preferVersion) {
+    candidates.push(path.join(REPO_ROOTS[preferVersion], "config.json"));
+  }
+  for (const root of Object.values(REPO_ROOTS)) {
+    candidates.push(path.join(root, "config.json"));
+  }
+  // Standalone / legacy locations (before nest)
+  const home = path.dirname(REPO_ROOTS.teleproto) === path.dirname(REPO_ROOTS.mtcute)
+    ? path.dirname(REPO_ROOTS.teleproto)
+    : process.env.HOME || "/root";
+  candidates.push(
+    path.join(home, "telebox", "config.json"),
+    path.join(home, "telebox-next", "config.json"),
+    path.join(home, "telebox-classic", "config.json"),
+    path.join(home, "telebox_mtcute", "config.json"),
+    path.join("/root/telebox/config.json"),
+    path.join("/root/telebox-next/config.json"),
+  );
+
+  const seen = new Set<string>();
+  for (const file of candidates) {
+    const resolved = path.resolve(file);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    const cfg = readJsonConfig(resolved);
+    if (!cfg) continue;
+    const apiId = cfg.api_id ?? cfg.apiId;
+    const apiHash = cfg.api_hash ?? cfg.apiHash;
+    if (apiId != null && apiHash) {
+      console.log(`[controller] Seed config from ${resolved}`);
+      return cfg;
+    }
+  }
+  return null;
+}
+
+/** Ensure target edition has a usable config.json (create from source if missing). */
+function ensureEditionConfig(
+  version: "teleproto" | "mtcute",
+  seedFrom?: "teleproto" | "mtcute",
+): string {
+  const repo = REPO_ROOTS[version];
+  if (!repo || !fs.existsSync(repo)) {
+    throw new Error(`目标版本目录不存在: ${repo || version}`);
+  }
+  const configPath = path.join(repo, "config.json");
+  const existing = readJsonConfig(configPath);
+  if (existing && (existing.api_id != null || existing.apiId != null) && (existing.api_hash || existing.apiHash)) {
+    return configPath;
+  }
+
+  const seed = findSeedConfig(seedFrom ?? (version === "mtcute" ? "teleproto" : "mtcute"));
+  if (!seed) {
+    throw new Error(
+      `目标版本缺少 config.json，且无法从当前版本自动生成凭证。\n` +
+        `请确认当前运行中的 TeleBox 目录里有 config.json（含 api_id / api_hash）。\n` +
+        `目标路径: ${configPath}`,
+    );
+  }
+
+  const next: Record<string, unknown> = {
+    api_id: seed.api_id ?? seed.apiId,
+    api_hash: seed.api_hash ?? seed.apiHash,
+  };
+  // Optional fields users may have customized
+  for (const key of ["proxy", "device_model", "system_version", "app_version", "lang_code", "system_lang_code"]) {
+    if (seed[key] != null) next[key] = seed[key];
+  }
+  // Keep existing session markers if any partial file existed
+  if (existing?.session) next.session = existing.session;
+  if (existing?._switchSessionPath) next._switchSessionPath = existing._switchSessionPath;
+
+  fs.mkdirSync(repo, { recursive: true });
+  fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`);
+  console.log(`[controller] Wrote ${configPath} (auto-seeded api credentials for zero-config switch)`);
+  return configPath;
 }
 
 function clearSwitchSessionMarker(version: "teleproto" | "mtcute"): void {
@@ -524,12 +728,11 @@ function clearSwitchSessionMarker(version: "teleproto" | "mtcute"): void {
 }
 
 function injectSessionConfig(version: "teleproto" | "mtcute", extPath: string): void {
-  const repo = REPO_ROOTS[version];
-  const configPath = path.join(repo, "config.json");
-
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`config.json not found: ${configPath}`);
-  }
+  // Fresh nested clones never ship config.json — seed from the other edition first.
+  const configPath = ensureEditionConfig(
+    version,
+    version === "mtcute" ? "teleproto" : "mtcute",
+  );
 
   if (version === "teleproto") {
     // gramjs: config.json.session is the StringSession string
@@ -537,19 +740,21 @@ function injectSessionConfig(version: "teleproto" | "mtcute", extPath: string): 
     const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
     config.session = sessionStr;
     fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    console.log(`[controller] Injected teleproto session into ${configPath}`);
   } else {
-    // mtcute: session.db is an SQLite file — we use the external path directly.
-    // mtcuteClient.ts reads SESSION_DB_PATH from process.cwd()/session.db.
-    // For external sessions, we replace the symlink-or-copy approach:
-    // The target repo's runtimeManager reads config.json and creates the client.
-    // We write a marker in config.json so the startup path resolver picks it up.
+    // mtcute: external SQLite path via _switchSessionPath (see mtcuteClient.ts)
+    if (!fs.existsSync(extPath)) {
+      throw new Error(`外部 session 文件不存在: ${extPath}`);
+    }
     const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
     config._switchSessionPath = extPath;
     fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    console.log(`[controller] Injected mtcute session marker → ${extPath}`);
   }
 }
 
 main().catch((err) => {
   console.error("[controller] Fatal:", err);
+  try { clearSwitchInProgress(); } catch { /* ignore */ }
   process.exit(1);
 });
