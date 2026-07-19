@@ -705,7 +705,7 @@ async function verifyBackup(
   try {
     fs.mkdirSync(tempDir, { recursive: true });
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn("tar", ["-xzf", archivePath, "-C", tempDir, `--telebox_backup/${BACKUP_MANIFEST_NAME}`]);
+      const proc = spawn("tar", ["-xzf", archivePath, "-C", tempDir, `telebox_backup/${BACKUP_MANIFEST_NAME}`]);
       proc.on("close", (code) => code === 0 ? resolve() : reject(new Error(`extract manifest failed: ${code}`)));
       proc.on("error", reject);
     });
