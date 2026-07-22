@@ -698,7 +698,7 @@ function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] 
 }
 
 function buildTodoEvidenceStats(records: ChatMessageRecord[], limit = 10): string[] {
-  const actionPattern = /(我来|我去|我弄|我改|我装|我处理|我试试|我看看|等我|晚点|明天|之后|回头|帮我|麻烦|需要确认|要确认|谁能|记得|准备|计划|打算|待会|过会)/;
+  const actionPattern = /(我来|我去|我弄|我改|我装|我处理|我试试|我看看|等我|帮我|麻烦|需要确认|要确认|谁能|记得|(?:晚点|明天|待会|过会|回头).{0,16}(?:试|看|弄|改|装|处理|确认)|(?:准备|计划|打算).{0,16}(?:做|弄|改|装|处理|接|买|卖|挂|自建|部署|验证|确认))/;
   const candidates = records
     .filter((record) => {
       const text = record.content.trim();

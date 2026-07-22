@@ -282,6 +282,131 @@ function buildSummaryConsistencyHints(records: ChatMessageRecord[]): string[] {
   ];
 }
 
+
+function sectionBounds(lines: string[], startPattern: RegExp, endPattern: RegExp): { start: number; end: number } | null {
+  const start = lines.findIndex((line) => startPattern.test(line.trim()));
+  if (start < 0) return null;
+  const offset = lines.slice(start + 1).findIndex((line) => endPattern.test(line.trim()));
+  return { start, end: offset < 0 ? lines.length : start + 1 + offset };
+}
+
+function topicTitleLine(line: string): boolean {
+  return /^(?:#{1,6}\s*)?\d+(?:️⃣|\uFE0F?\u20E3)?\s*\S/u.test(line.trim());
+}
+
+function compactTopicBlock(block: string[]): string[] {
+  const title = block.find(topicTitleLine)?.trim() || block[0]?.trim() || "";
+  const participants = block.find((line) => /^[👤👥]\s*(?:参与|主要参与|参与用户|相关用户)：/u.test(line.trim()))?.trim();
+  const conclusion = block.find((line) => /^(?:[•-]\s*)?(?:🎯\s*结论|✅\s*关键结论|↳)/u.test(line.trim()))?.trim();
+  const detail = block.find((line) => /^(?:[•-]\s*)?(?:⚠️\s*风险|⚔️\s*分歧|❓\s*未决|🔍\s*(?:注意|细节\s*\/\s*注意点))/u.test(line.trim()))?.trim();
+  const summary = (conclusion || detail || "↳ 暂无更多可靠细节")
+    .replace(/^(?:[•-]\s*)?(?:🎯\s*结论|✅\s*关键结论|⚠️\s*风险|⚔️\s*分歧|❓\s*未决|🔍\s*(?:注意|细节\s*\/\s*注意点))：?/u, "↳ ")
+    .replace(/^↳\s*/, "↳ ");
+  return [title, participants || "👥 参与：未明确", summary];
+}
+
+export function enforceSummaryTopicLayout(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const bounds = sectionBounds(lines, /🔥\s*重点话题/u, /✨\s*本期亮点/u);
+  if (!bounds) return text;
+  const body = lines.slice(bounds.start + 1, bounds.end);
+  const cleaned = body.filter((line) => !/^(?:#{1,6}\s*)?(?:📍\s*核心主线|📌\s*其他热议)$/u.test(line.trim()));
+  const starts = cleaned.map((line, index) => topicTitleLine(line) ? index : -1).filter((index) => index >= 0);
+  if (!starts.length) return text;
+  const blocks = starts.map((start, index) => {
+    const end = index + 1 < starts.length ? starts[index + 1] : cleaned.length;
+    return cleaned.slice(start, end).filter((line, lineIndex, array) => line.trim() || (lineIndex > 0 && lineIndex < array.length - 1));
+  });
+  const rebuilt: string[] = [];
+  if (blocks.length <= 5) {
+    for (const block of blocks) rebuilt.push(...block, "");
+  } else {
+    rebuilt.push("", "📍 核心主线", "");
+    for (const block of blocks.slice(0, 4)) rebuilt.push(...block, "");
+    rebuilt.push("📌 其他热议", "");
+    for (const block of blocks.slice(4)) rebuilt.push(...compactTopicBlock(block), "");
+  }
+  return [...lines.slice(0, bounds.start + 1), ...rebuilt, ...lines.slice(bounds.end)].join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function normalizedIdentity(value: string): string {
+  return String(value || "").replace(/^[@＠]+/, "").replace(/\s+/g, "").toLowerCase();
+}
+
+function recordIdentitySet(record: ChatMessageRecord): Set<string> {
+  const fullName = [record.firstName, record.lastName].filter(Boolean).join("");
+  return new Set([record.sender, record.username, record.firstName, record.lastName, fullName]
+    .map(normalizedIdentity).filter(Boolean));
+}
+
+export function validateSummaryQuotes(text: string, records: ChatMessageRecord[]): string {
+  const lines = text.split(/\r?\n/);
+  const bounds = sectionBounds(lines, /💬\s*金句\s*\/\s*名场面/u, /✅\s*待办\s*\/\s*需要关注/u);
+  if (!bounds) return text;
+  const kept: string[] = [];
+  for (const line of lines.slice(bounds.start + 1, bounds.end)) {
+    const match = line.match(/(?:[•-]\s*)?🗣️\s*([^：「\n]+)：?「([^」]+)」/u);
+    if (!match) continue;
+    const speaker = normalizedIdentity(match[1]);
+    const quote = match[2];
+    const valid = records.some((record) => recordIdentitySet(record).has(speaker) && record.content.includes(quote));
+    if (valid) kept.push(line);
+  }
+  const content = kept.length ? kept : ["• 无明显金句"];
+  return [...lines.slice(0, bounds.start + 1), ...content, "", ...lines.slice(bounds.end)].join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+function actionEvidenceRecords(records: ChatMessageRecord[]): ChatMessageRecord[] {
+  const strong = /(我来|我去|我弄|我改|我装|我处理|我试试|我看看|等我|帮我|麻烦|需要确认|要确认|谁能|记得|(?:晚点|明天|待会|过会|回头).{0,16}(?:试|看|弄|改|装|处理|确认)|(?:准备|计划|打算).{0,16}(?:做|弄|改|装|处理|接|买|卖|挂|自建|部署|验证|确认))/;
+  return records.filter((record) => {
+    const value = record.content.trim();
+    return value.length >= 4 && value.length <= 180 && strong.test(value);
+  });
+}
+
+function overlapTokens(value: string): Set<string> {
+  const result = new Set<string>();
+  for (const word of value.toLowerCase().match(/[a-z0-9._-]{2,}/g) || []) result.add(word);
+  for (const chunk of value.match(/[\u4e00-\u9fa5]{2,}/g) || []) {
+    for (let index = 0; index < chunk.length - 1; index += 1) result.add(chunk.slice(index, index + 2));
+  }
+  for (const stop of ["需要", "准备", "计划", "确认", "处理", "一下", "还是", "可以", "未明", "负责"]) result.delete(stop);
+  return result;
+}
+
+function hasTaskOverlap(task: string, evidence: string): boolean {
+  const a = overlapTokens(task);
+  const b = overlapTokens(evidence);
+  return [...a].some((token) => b.has(token));
+}
+
+export function validateSummaryTodos(text: string, records: ChatMessageRecord[]): string {
+  const lines = text.split(/\r?\n/);
+  const bounds = sectionBounds(lines, /✅\s*待办\s*\/\s*需要关注/u, /🧭\s*一句话总结/u);
+  if (!bounds) return text;
+  const evidence = actionEvidenceRecords(records);
+  const kept: string[] = [];
+  for (const line of lines.slice(bounds.start + 1, bounds.end)) {
+    const match = line.match(/^\s*(?:[•-]\s*)?🔲\s*([^：:\n]+)[：:]\s*(.+)$/u);
+    if (!match) continue;
+    const ownerRaw = match[1].trim();
+    const owner = normalizedIdentity(ownerRaw);
+    const task = match[2].trim();
+    const ownerUnknown = /未明确负责人|未明确/.test(ownerRaw);
+    const valid = evidence.some((record) => {
+      const ownerMatches = ownerUnknown || recordIdentitySet(record).has(owner);
+      return ownerMatches && hasTaskOverlap(task, record.content);
+    });
+    if (valid) kept.push(line);
+  }
+  const content = kept.length ? kept : ["• 无明确待办"];
+  return [...lines.slice(0, bounds.start + 1), ...content, "", ...lines.slice(bounds.end)].join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
+export function applySummaryEvidenceGuards(text: string, records: ChatMessageRecord[]): string {
+  return validateSummaryTodos(validateSummaryQuotes(enforceSummaryTopicLayout(text), records), records);
+}
+
 function insertWeatherPanel(text: string, panel: string): string {
   if (text.includes("🌦 群聊天气")) return text;
   const lines = text.split(/\r?\n/);
@@ -300,6 +425,7 @@ function decorateSummaryOutput(text: string, params: {
   includeWeather: boolean;
 }): string {
   let result = replaceSummaryTitle(text, titleForSummaryMode(params.mode, params.chatName, params.specialTitle));
+  if (params.mode === "summary") result = applySummaryEvidenceGuards(result, params.records);
   if (params.includeWeather) result = insertWeatherPanel(result, buildChatWeatherPanel(params.records));
   return result;
 }
