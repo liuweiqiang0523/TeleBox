@@ -167,20 +167,21 @@ function normalizeSummaryHeadings(text: string): string {
     .join("\n");
 }
 
-function normalizeMentionNameToken(value: string): string {
+function normalizeMentionNameToken(value: string, forceUser = false): string {
   const raw = String(value || "").trim();
   if (!raw || raw.startsWith("＠") || raw.startsWith("@")) return raw;
-  if (/^(约|无|未知|N\s*条|HH:mm)$/.test(raw) || /^\d{2}:\d{2}$/.test(raw)) return raw;
+  if (/^(约|无|未知|N\s*条|HH:mm)$/.test(raw)) return raw;
+  if (!forceUser && /^\d{2}:\d{2}$/.test(raw)) return raw;
   return `@${raw}`;
 }
 
-function normalizeMentionList(value: string): string {
+function normalizeMentionList(value: string, forceUser = false): string {
   return value
     .split(/([、,，])/)
     .map((part) => {
       if (/^[、,，]$/.test(part)) return part;
       const suffix = part.match(/\s*$/)?.[0] || "";
-      return `${normalizeMentionNameToken(part)}${suffix}`;
+      return `${normalizeMentionNameToken(part, forceUser)}${suffix}`;
     })
     .join("");
 }
@@ -190,10 +191,10 @@ function normalizeSummaryMentions(text: string): string {
     .split(/\r?\n/)
     .map((line) => {
       let next = line;
-      next = next.replace(/^(\s*(?:[•-]\s*)?👥\s*核心用户：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names)}`);
-      next = next.replace(/^(\s*[👤👥]\s*(?:主要参与|参与用户|相关用户)：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names)}`);
-      next = next.replace(/^(\s*(?:[•-]\s*)?[🥇🥈🥉]\s*)([^：\n]+)(：约\s*\d+\s*条｜称号：.+)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name)}${suffix}`);
-      next = next.replace(/^(\s*(?:[•-]\s*)?🗣️\s*)([^：「\n]+)(：「.*)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name)}${suffix}`);
+      next = next.replace(/^(\s*(?:[•-]\s*)?👥\s*核心用户：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names, true)}`);
+      next = next.replace(/^(\s*[👤👥]\s*(?:主要参与|参与用户|相关用户)：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names, true)}`);
+      next = next.replace(/^(\s*(?:[•-]\s*)?[🥇🥈🥉]\s*)([^：\n]+)(：约\s*\d+\s*条｜称号：.+)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name, true)}${suffix}`);
+      next = next.replace(/^(\s*(?:[•-]\s*)?🗣️\s*)([^：「\n]+)(：「.*)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name, true)}${suffix}`);
       return next;
     })
     .join("\n");
