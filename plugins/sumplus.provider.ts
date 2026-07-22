@@ -1,7 +1,10 @@
 import axios from "axios";
 import { spawn } from "child_process";
 
-const MAX_SUMMARY_INPUT_CHARS = 28000;
+// Daily/group summaries already use deterministic full-message statistics. Keep
+// enough sampled evidence for busy groups instead of silently collapsing a
+// thousand-message day to a tiny context window.
+const MAX_SUMMARY_INPUT_CHARS = 60000;
 
 export type ProviderType = "openai" | "gemini";
 

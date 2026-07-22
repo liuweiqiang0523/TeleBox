@@ -239,10 +239,19 @@ function buildChatWeatherPanel(records: ChatMessageRecord[]): string {
   const questionCount = (text.match(/[?？]/g) || []).length;
   const disputeCount = (text.match(/争议|不对|不是|问题|错误|失败|修复|卡|崩|吵|骂|坑/g) || []).length;
   const melonCount = (text.match(/瓜|笑|哈哈|草|离谱|抽象|绷|乐|名场面/g) || []).length;
-  const heat = Math.min(100, 25 + count * 0.55 + users * 4);
-  const fun = Math.min(100, 20 + emojiCount * 3 + melonCount * 8 + users * 2);
-  const dispute = Math.min(100, 10 + disputeCount * 10 + questionCount * 2);
-  const melon = Math.min(100, 15 + melonCount * 12 + emojiCount * 2);
+  const sorted = sortRecords(records);
+  const spanHours = sorted.length > 1
+    ? Math.max(1, (sorted[sorted.length - 1].timestamp - sorted[0].timestamp) / 3600)
+    : 1;
+  const messagesPerHour = count / spanHours;
+  const activeUserFactor = Math.min(1, users / 35);
+  const perMessage = (hits: number) => hits / Math.max(1, count);
+  // Score ratios and density rather than raw totals. Raw totals made every
+  // sufficiently busy day read 100/100 across all four dimensions.
+  const heat = 18 + Math.min(62, messagesPerHour * 0.75) + activeUserFactor * 18;
+  const fun = 12 + Math.min(58, perMessage(emojiCount + melonCount * 2) * 260) + activeUserFactor * 16;
+  const dispute = 8 + Math.min(72, perMessage(disputeCount * 2 + questionCount * 0.35) * 230);
+  const melon = 8 + Math.min(68, perMessage(melonCount * 2 + emojiCount * 0.25) * 250) + activeUserFactor * 8;
   const weather = heat >= 80 ? "热闹高能" : dispute >= 65 ? "局部有争议" : melon >= 65 ? "多云转吃瓜" : fun >= 60 ? "轻松有梗" : "平稳交流";
   return [
     "🌦 群聊天气",
@@ -810,9 +819,9 @@ function resolveRangeToken(rangeToken: string | undefined): {
 }
 
 function getSummaryDensity(durationMinutes: number | null, count: number): SummaryDensity {
-  const largeTopicLimit = count >= 1000 ? 5 : count >= 500 ? 4 : 3;
-  const largeTargetLength = count >= 1000 ? "1300-1800 中文字，必须完整收尾" : count >= 500 ? "900-1300 中文字，必须完整收尾" : "650-900 中文字";
-  const largeMaxOutputLength = count >= 1000 ? 2600 : count >= 500 ? 2000 : 1400;
+  const largeTopicLimit = count >= 1500 ? 8 : count >= 1000 ? 7 : count >= 500 ? 5 : 4;
+  const largeTargetLength = count >= 1500 ? "1700-2400 中文字，必须完整收尾" : count >= 1000 ? "1400-2100 中文字，必须完整收尾" : count >= 500 ? "1000-1500 中文字，必须完整收尾" : "650-950 中文字";
+  const largeMaxOutputLength = count >= 1500 ? 3600 : count >= 1000 ? 3200 : count >= 500 ? 2400 : 1600;
 
   if (durationMinutes === null) {
     if (count <= 50) {
@@ -892,9 +901,9 @@ function getSummaryDensity(durationMinutes: number | null, count: number): Summa
     targetLength: largeTargetLength,
     topicLimit: largeTopicLimit,
     pointLimit: 2,
-    highlightLimit: count >= 1000 ? 3 : count >= 500 ? 4 : 3,
+    highlightLimit: count >= 1000 ? 5 : count >= 500 ? 4 : 3,
     quoteLimit: 2,
-    todoLimit: count >= 1000 ? 3 : count >= 500 ? 4 : 3,
+    todoLimit: count >= 1000 ? 4 : count >= 500 ? 3 : 2,
     maxOutputLength: largeMaxOutputLength,
   };
 }
@@ -1504,7 +1513,10 @@ async function handleCommand(msg: Api.Message): Promise<void> {
       : special
       ? prepareSpecialInput(mode, fetchResult.records, special.keyword)
       : prepareSummaryInput(fetchResult.records);
-    const localSummaryStats = !isPersonAnalysis && !["rank", "links", "about", "compare"].includes(mode)
+    // Summary mode needs the shared full-message statistics here. Special
+    // modes already prepare their own tailored statistics/evidence; injecting
+    // the same block again wastes context and can bias the model toward counts.
+    const localSummaryStats = !isPersonAnalysis && mode === "summary"
       ? buildLocalSummaryStats(fetchResult.records, prepared)
       : [];
     const summaryInput = isPersonAnalysis
@@ -1546,6 +1558,8 @@ async function handleCommand(msg: Api.Message): Promise<void> {
           `亮点上限：${density.highlightLimit}`,
           `金句上限：${density.quoteLimit}`,
           `待办上限：${density.todoLimit}`,
+          `动态数量原则：以上均为上限而非必须写满；消息少或证据弱就减少，消息多时优先覆盖多人参与、持续时间长、回复密集的项目。`,
+          `热度筛选原则：多人持续互动 > 多人短时密集互动 > 单人高频输出 > 零散提及；同一主线先合并再输出。`,
           `生成时间：${formatDate(new Date())}`,
           "",
           ...localSummaryStats,

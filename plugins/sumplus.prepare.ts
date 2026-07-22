@@ -1,9 +1,9 @@
 import type { ChatMessageRecord, IdentityCache, PreparedInput, SumMode } from "./sumplus.types";
 
 const MAX_MESSAGE_CHARS = 800;
-const MAX_SUMMARY_SAMPLE_LINES = 160;
+const MAX_SUMMARY_SAMPLE_LINES = 340;
 const MAX_PERSON_CONTEXT_LINES = 220;
-const SUMMARY_MESSAGE_CHAR_BUDGET = 18000;
+const SUMMARY_MESSAGE_CHAR_BUDGET = 44000;
 const PERSON_CONTEXT_RADIUS = 2;
 const URL_PATTERN = /https?:\/\/[^\s<>"'，。！？；、）)】\]]+/gi;
 const MEME_STOP_WORDS = new Set([
@@ -183,7 +183,7 @@ function segmentSummaryLines(segment: ChatMessageRecord[], index: number, total:
   return [
     `分段 ${index + 1}/${total}：${formatDate(new Date(first.timestamp * 1000))} 至 ${formatDate(new Date(last.timestamp * 1000))}`,
     `本段统计：${sorted.length} 条；核心用户：${topUsers}；活跃时段：${activeHours}；链接 ${linkCount}；问题 ${questionCount}`,
-    ...prepared.lines.slice(0, Math.max(18, Math.floor(150 / total))),
+    ...prepared.lines.slice(0, Math.max(30, Math.floor(320 / total))),
   ];
 }
 
@@ -639,15 +639,35 @@ export function buildLocalSummaryStats(records: ChatMessageRecord[], prepared: P
 }
 
 function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] {
-  const stats = new Map<string, { sender: string; count: number; questions: number; links: number; media: number; chars: number }>();
+  type TitleStat = {
+    sender: string;
+    count: number;
+    questions: number;
+    links: number;
+    media: number;
+    chars: number;
+    messages: string[];
+    words: Map<string, number>;
+  };
+  const stats = new Map<string, TitleStat>();
   for (const record of records) {
     const key = getUserKey(record);
-    const item = stats.get(key) || { sender: record.sender, count: 0, questions: 0, links: 0, media: 0, chars: 0 };
+    const item = stats.get(key) || {
+      sender: record.sender, count: 0, questions: 0, links: 0, media: 0, chars: 0,
+      messages: [], words: new Map<string, number>(),
+    };
     item.count += 1;
     item.questions += isQuestion(record.content) ? 1 : 0;
     item.links += extractUrls(record.content).length;
     item.media += record.content.includes("[媒体消息]") ? 1 : 0;
     item.chars += record.content.length;
+    const clean = compactText(record.content, 70);
+    if (clean && clean !== "[媒体消息]" && item.messages.length < 80) item.messages.push(clean);
+    for (const token of clean.match(/[A-Za-z0-9._-]{2,}|[\u4e00-\u9fa5]{2,8}/g) || []) {
+      const normalized = token.toLowerCase();
+      if (MEME_STOP_WORDS.has(normalized) || /^https?/.test(normalized)) continue;
+      item.words.set(token, (item.words.get(token) || 0) + 1);
+    }
     stats.set(key, item);
   }
 
@@ -661,10 +681,18 @@ function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] 
         item.media > 0 ? `媒体 ${item.media}` : "",
         item.chars / Math.max(1, item.count) > 60 ? "长消息" : "短句互动",
       ].filter(Boolean);
-      return `${item.sender}：${traits.join(" / ") || "普通互动"}；称号要围绕真实话题生成，可以更狠更有梗，但只吐槽发言风格/群聊角色，不做人身攻击`;
+      const hotWords = [...item.words.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([word, count]) => `${word}×${count}`)
+        .join("、") || "无明显";
+      const examples = pickEvenValues(item.messages, Math.min(3, item.messages.length))
+        .map((message) => `「${message}」`)
+        .join(" / ") || "无";
+      return `${item.sender}：${traits.join(" / ") || "普通互动"}；高频词：${hotWords}；代表短句：${examples}；称号必须贴合这些证据和真实话题，只吐槽发言风格/群聊角色`;
     });
 
-  return hints.length ? ["称号库提示：", ...hints] : [];
+  return hints.length ? ["称号证据：", ...hints] : [];
 }
 
 function normalizeRepeatContent(content: string): string {
@@ -821,7 +849,7 @@ function prepareCpInput(records: ChatMessageRecord[]): PreparedInput {
   const pairLimit = records.length >= 800 ? 12 : records.length >= 200 ? 9 : 6;
   const mentionLimit = records.length >= 800 ? 8 : records.length >= 200 ? 6 : 4;
   const quoteLimit = records.length >= 800 ? 70 : records.length >= 200 ? 55 : 35;
-  const sampleLimit = records.length >= 800 ? 130 : records.length >= 200 ? 110 : 80;
+  const sampleLimit = records.length >= 1500 ? 280 : records.length >= 800 ? 240 : records.length >= 200 ? 160 : 80;
   return {
     lines: [
       "CP 模式边界：只分析群聊互动和节目效果，不暗示现实关系。",
@@ -870,7 +898,7 @@ function prepareMemeInput(records: ChatMessageRecord[]): PreparedInput {
       ...buildQuoteCandidateLines(records).slice(0, 80),
       "",
       "代表性消息：",
-      ...sampled.lines.slice(0, 140),
+      ...sampled.lines.slice(0, records.length >= 1000 ? 260 : records.length >= 500 ? 220 : 140),
     ],
     note: `已统计 ${records.length} 条消息的热词/重复短句，并提供代表性消息`,
   };
@@ -893,7 +921,7 @@ function prepareRoastInput(records: ChatMessageRecord[]): PreparedInput {
       ...buildQuoteCandidateLines(records).slice(0, 80),
       "",
       "代表性消息：",
-      ...sampled.lines.slice(0, 140),
+      ...sampled.lines.slice(0, records.length >= 1000 ? 260 : records.length >= 500 ? 220 : 140),
     ],
     note: "槽点候选已整理",
   };
@@ -910,7 +938,7 @@ function prepareRelationInput(records: ChatMessageRecord[]): PreparedInput {
       ...buildRankStats(records),
       "",
       "代表性消息：",
-      ...sampled.lines.slice(0, 150),
+      ...sampled.lines.slice(0, records.length >= 1000 ? 280 : records.length >= 500 ? 220 : 150),
     ],
     note: `已统计 ${records.length} 条消息的连续互动和 @ 点名候选`,
   };
@@ -926,7 +954,7 @@ function prepareQuotesInput(records: ChatMessageRecord[]): PreparedInput {
       ...buildRepeatStats(records, 6),
       "",
       "代表性消息：",
-      ...sampled.lines.slice(0, 100),
+      ...sampled.lines.slice(0, records.length >= 1000 ? 220 : records.length >= 500 ? 170 : 100),
     ],
     note: `已筛选 ${records.length} 条消息中的金句候选，并附带代表性上下文`,
   };
@@ -940,8 +968,8 @@ export function prepareCompareInput(
 ): PreparedInput {
   const currentPrepared = currentRecords.length >= 520 ? prepareSegmentedSummaryInput(currentRecords) : prepareFlatSummaryInput(currentRecords);
   const previousPrepared = previousRecords.length >= 520 ? prepareSegmentedSummaryInput(previousRecords) : prepareFlatSummaryInput(previousRecords);
-  const currentLines = compactLinesToBudget(currentPrepared.lines, 9000);
-  const previousLines = compactLinesToBudget(previousPrepared.lines, 9000);
+  const currentLines = compactLinesToBudget(currentPrepared.lines, 18000);
+  const previousLines = compactLinesToBudget(previousPrepared.lines, 18000);
   return {
     lines: [
       "对比本地统计：",
@@ -971,7 +999,7 @@ function prepareRankInput(records: ChatMessageRecord[]): PreparedInput {
       ...buildRepeatStats(records, 6),
       "",
       "代表性消息：",
-      ...sampled.lines.slice(0, 140),
+      ...sampled.lines.slice(0, records.length >= 1000 ? 260 : records.length >= 500 ? 220 : 140),
     ],
     note: `已统计 ${records.length} 条消息，并提供代表性消息辅助判断称号和贡献方式`,
   };
@@ -1050,7 +1078,11 @@ function prepareGeneralModeInput(records: ChatMessageRecord[], mode: SumMode): P
   const sampled = prepareSummaryInput(records);
   const localStats = buildLocalSummaryStats(records, sampled);
   const quoteLimit = records.length >= 500 ? 80 : records.length >= 120 ? 60 : 35;
-  const sampleLimit = records.length >= 500 ? 150 : records.length >= 120 ? 120 : 80;
+  const sampleLimit = records.length >= 1500 ? 300
+    : records.length >= 1000 ? 260
+    : records.length >= 500 ? 220
+    : records.length >= 120 ? 140
+    : 80;
   const lines = [
     `模式提示：${mode} 模式需要结合本地统计、复读/刷屏候选、金句候选和代表性消息判断重点。`,
     "",
