@@ -192,7 +192,7 @@ function normalizeSummaryMentions(text: string): string {
     .map((line) => {
       let next = line;
       next = next.replace(/^(\s*(?:[•-]\s*)?👥\s*核心用户：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names, true)}`);
-      next = next.replace(/^(\s*[👤👥]\s*(?:主要参与|参与用户|相关用户)：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names, true)}`);
+      next = next.replace(/^(\s*[👤👥]\s*(?:参与|主要参与|参与用户|相关用户)：)(.+)$/u, (_m, prefix, names) => `${prefix}${normalizeMentionList(names, true)}`);
       next = next.replace(/^(\s*(?:[•-]\s*)?[🥇🥈🥉]\s*)([^：\n]+)(：约\s*\d+\s*条｜称号：.+)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name, true)}${suffix}`);
       next = next.replace(/^(\s*(?:[•-]\s*)?🗣️\s*)([^：「\n]+)(：「.*)$/u, (_m, prefix, name, suffix) => `${prefix}${normalizeMentionNameToken(name, true)}${suffix}`);
       return next;
@@ -232,7 +232,7 @@ function bar(score: number): string {
   return `${"█".repeat(filled)}${"░".repeat(10 - filled)} ${value}/100`;
 }
 
-function buildChatWeatherPanel(records: ChatMessageRecord[]): string {
+function chatWeatherScores(records: ChatMessageRecord[]): { heat: number; fun: number; dispute: number; melon: number; weather: string } {
   const count = records.length;
   const users = new Set(records.map((record) => record.senderId || record.sender).filter(Boolean)).size;
   const text = records.map((record) => record.content || "").join("\n");
@@ -247,13 +247,16 @@ function buildChatWeatherPanel(records: ChatMessageRecord[]): string {
   const messagesPerHour = count / spanHours;
   const activeUserFactor = Math.min(1, users / 35);
   const perMessage = (hits: number) => hits / Math.max(1, count);
-  // Score ratios and density rather than raw totals. Raw totals made every
-  // sufficiently busy day read 100/100 across all four dimensions.
   const heat = 18 + Math.min(62, messagesPerHour * 0.75) + activeUserFactor * 18;
   const fun = 12 + Math.min(58, perMessage(emojiCount + melonCount * 2) * 260) + activeUserFactor * 16;
   const dispute = 8 + Math.min(72, perMessage(disputeCount * 2 + questionCount * 0.35) * 230);
   const melon = 8 + Math.min(68, perMessage(melonCount * 2 + emojiCount * 0.25) * 250) + activeUserFactor * 8;
   const weather = heat >= 80 ? "热闹高能" : dispute >= 65 ? "局部有争议" : melon >= 65 ? "多云转吃瓜" : fun >= 60 ? "轻松有梗" : "平稳交流";
+  return { heat, fun, dispute, melon, weather };
+}
+
+function buildChatWeatherPanel(records: ChatMessageRecord[]): string {
+  const { heat, fun, dispute, melon, weather } = chatWeatherScores(records);
   return [
     "🌦 群聊天气",
     `• 🌤 天气：${weather}`,
@@ -262,6 +265,21 @@ function buildChatWeatherPanel(records: ChatMessageRecord[]): string {
     `• ⚔️ 争议指数：${bar(dispute)}`,
     `• 🍉 吃瓜浓度：${bar(melon)}`,
   ].join("\n");
+}
+
+function buildSummaryConsistencyHints(records: ChatMessageRecord[]): string[] {
+  const sorted = sortRecords(records);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  const scores = chatWeatherScores(records);
+  const fullDay = Boolean(first && last)
+    && new Date(first.timestamp * 1000).getHours() === 0
+    && new Date(last.timestamp * 1000).getHours() >= 23;
+  return [
+    "一致性约束：",
+    `实际消息起止：${first ? formatDate(new Date(first.timestamp * 1000)) : "未知"} 至 ${last ? formatDate(new Date(last.timestamp * 1000)) : "未知"}；${fullDay ? "可使用“全天”" : "不是完整自然日，禁止使用“全天”，改用“今日时段/本时段/从上午到晚间”等准确说法"}`,
+    `天气指标：热度 ${Math.round(scores.heat)}；欢乐 ${Math.round(scores.fun)}；争议 ${Math.round(scores.dispute)}；吃瓜 ${Math.round(scores.melon)}。一句话总结必须与分数一致：争议低于40禁用“交锋/对线/火药味”，欢乐低于40禁用“欢乐爆棚”，吃瓜低于40禁用“吃瓜不断”，热度低于70禁用“高强度刷屏”。`,
+  ];
 }
 
 function insertWeatherPanel(text: string, panel: string): string {
@@ -1565,6 +1583,8 @@ async function handleCommand(msg: Api.Message): Promise<void> {
           "",
           ...localSummaryStats,
           localSummaryStats.length ? "" : "",
+          ...buildSummaryConsistencyHints(fetchResult.records),
+          "",
           "聊天消息：",
           prepared.lines.join("\n"),
         ].filter((line) => line !== "").join("\n");

@@ -633,6 +633,8 @@ export function buildLocalSummaryStats(records: ChatMessageRecord[], prepared: P
     ...buildRepeatStats(sorted, 6),
     ...buildUserTitleHints(sorted),
     "",
+    ...buildTodoEvidenceStats(sorted),
+    "",
     "全量复读/热词统计：以下候选基于全量消息，不是采样；如果出现高频复读、刷屏、口头禅或集体跟风，摘要必须写进重点话题、亮点或名场面，不能因为它是重复短句就忽略。",
     ...buildMemeStats(sorted),
   ];
@@ -693,6 +695,23 @@ function buildUserTitleHints(records: ChatMessageRecord[], limit = 5): string[] 
     });
 
   return hints.length ? ["称号证据：", ...hints] : [];
+}
+
+function buildTodoEvidenceStats(records: ChatMessageRecord[], limit = 10): string[] {
+  const actionPattern = /(我来|我去|我弄|我改|我装|我处理|我试试|我看看|等我|晚点|明天|之后|回头|帮我|麻烦|需要确认|要确认|谁能|记得|准备|计划|打算|待会|过会)/;
+  const candidates = records
+    .filter((record) => {
+      const text = record.content.trim();
+      return text.length >= 4 && text.length <= 180 && actionPattern.test(text) && !extractUrls(text).length;
+    })
+    .slice(-limit)
+    .map((record) => `${record.sender}｜${formatDate(new Date(record.timestamp * 1000))}｜「${compactText(record.content, 140)}」`);
+
+  return [
+    "待办证据候选（基于全量消息）：",
+    ...(candidates.length ? candidates : ["无明确行动证据；待办栏目必须写“无明确待办”"]),
+    "待办约束：负责人只能取候选中的真实用户，或写“未明确负责人”；禁止用服务器售价、方案、群友、项目等对象冒充负责人。没有承诺/请求/约定/待确认原话时，不得把话题未决项改写成待办。",
+  ];
 }
 
 function normalizeRepeatContent(content: string): string {
